@@ -83,39 +83,8 @@ export default function TenderWriterApp() {
             <span className="text-[13px] text-gray-500 font-medium">Tender Composer</span>
           </div>
           <div className="flex flex-col flex-grow p-4 overflow-auto">
-            <Input
-              type="text"
-              placeholder="Tender Title"
-              className="text-2xl font-semibold mb-4 border-none bg-transparent focus-visible:ring-0 p-0"
-              value={tenderTitle}
-              onChange={(e) => setTenderTitle(e.target.value)}
-            />
-            <div className="flex items-center gap-1 mb-4 border-b border-gray-100 pb-2">
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100 font-semibold">
-                B
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100 italic">
-                I
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">
-                H₁
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">
-                H₂
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">
-                H₃
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">
-                •
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">
-                1.
-              </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-3 text-gray-700 hover:bg-gray-100">{`<>`}</Button>
-            </div>
             <Textarea
-              placeholder="Start writing your tender proposal..."
+              placeholder="Start typing..."
               className="flex-grow text-[15px] border-none resize-none focus-visible:ring-0 p-0"
               value={tenderContent}
               onChange={(e) => setTenderContent(e.target.value)}
