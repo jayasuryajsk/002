@@ -1,6 +1,6 @@
+import { Message } from 'ai'
 import { google } from "@ai-sdk/google"
-import { generateText } from "ai"
-import { Message } from "ai"
+import { streamText, createDataStreamResponse, smoothStream } from 'ai'
 import { NextResponse } from "next/server"
 
 export const runtime = "edge"
@@ -8,15 +8,13 @@ export const runtime = "edge"
 export async function POST(req: Request) {
   try {
     const { messages, pdfContent } = await req.json()
-    
-    // Get the last message content
-    const lastMessage = messages[messages.length - 1]
-    let content: string | Array<{ type: string; text?: string; data?: Uint8Array; mimeType?: string }> = 
-      lastMessage.content
 
-    // If there's PDF content, include it with the last text message
+    // Get the last message content (and include PDF content if provided)
+    const lastMessage = messages[messages.length - 1]
+    let content = lastMessage.content
+
     if (pdfContent) {
-      // Find the last text message (should be right before the PDF message)
+      // Use the last text message (before the PDF message) as the text part
       const lastTextMessage = messages[messages.length - 2]
       content = [
         { type: "text", text: lastTextMessage.content },
@@ -24,41 +22,33 @@ export async function POST(req: Request) {
       ]
     }
 
-    const response = await generateText({
-      model: google("gemini-2.0-flash-001"),
-      messages: [
-        ...messages.slice(0, -1),
-        {
-          role: "user",
-          content
-        }
-      ]
-    })
+    // Build a new messages array that replaces the last message with our combined content
+    const newMessages = [
+      ...messages.slice(0, -1),
+      { role: "user", content }
+    ]
 
-    // Stream the response
-    const encoder = new TextEncoder()
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(response.text)}\n\n`))
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"))
-          controller.close()
-        } catch (error) {
-          controller.error(error)
-        }
-      },
-    })
+    // Return a streaming response using the native streaming helpers
+    return createDataStreamResponse({
+      execute: (dataStream) => {
+        const result = streamText({
+          model: google("gemini-2.0-flash-001"),
+          messages: newMessages,
+          experimental_transform: smoothStream({ chunking: 'word' })
+        })
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        // Merge the streaming result into the provided dataStream to force flush each chunk
+        result.mergeIntoDataStream(dataStream)
       },
+      onError: () => {
+        return 'Oops, an error occurred while streaming.'
+      }
     })
   } catch (error) {
-    console.error("Chat error:", error)
-    return new NextResponse("Error processing chat request", { status: 500 })
+    console.error("Error in chat:", error)
+    return new NextResponse(
+      JSON.stringify({ error: "An error occurred during chat" }),
+      { status: 500 }
+    )
   }
 }
-

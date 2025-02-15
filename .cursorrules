@@ -1,0 +1,62 @@
+Next.js Best Practices:
+
+Utilize Next.js App Router for improved performance and easier routing
+Implement proper error boundaries to handle and display errors gracefully
+Use server components for better performance and reduced client-side JavaScript
+Leverage Next.js built-in image optimization for faster page loads
+Implement proper data fetching patterns using getServerSideProps or getStaticProps
+Use Next.js built-in internationalization features for multi-language support
+
+React Best Practices:
+
+Use functional components and hooks instead of class components for better code organization
+Implement proper React.memo and useMemo for performance optimization
+Follow the React hooks rules strictly to avoid common pitfalls
+Use context API or state management libraries for efficient state sharing
+Implement proper prop type validation using PropTypes or TypeScript
+Utilize React.lazy and Suspense for code-splitting and lazy loading components
+
+Tailwind CSS Best Practices:
+
+Use utility-first approach for consistent and maintainable styles
+Implement responsive design using Tailwind's responsive modifiers
+Utilize Tailwind's custom theme configuration for brand-specific styles
+Use @apply directive to create component-specific styles
+Implement proper dark mode support using Tailwind's dark mode classes
+Leverage Tailwind's JIT mode for faster build times and smaller CSS output
+
+Radix UI Best Practices:
+
+Use Radix UI components as building blocks for custom UI elements
+Implement proper accessibility features using Radix UI's built-in support
+Customize Radix UI components using the provided APIs for consistent look and feel
+Utilize Radix UI's composition model for creating complex, accessible UI patterns
+Implement proper state management for Radix UI components using their APIs
+Leverage Radix UI's TypeScript support for better type safety and developer experience
+
+Framer Motion Best Practices:
+
+Use Framer Motion for creating performant animations and transitions
+Implement proper animation variants for reusable animation patterns
+Utilize Framer Motion's gesture support for interactive animations
+Leverage Framer Motion's layout animations for smooth DOM changes
+Implement proper animation performance optimization using Framer Motion's APIs
+Use Framer Motion's TypeScript support for better type safety in animations
+
+UUID Best Practices:
+
+Use UUID v4 for generating unique identifiers in your application
+Implement proper UUID validation to ensure data integrity
+Utilize UUID for creating unique keys in React components for better reconciliation
+Leverage UUID for generating unique identifiers in API requests and responses
+Implement proper UUID storage and retrieval patterns for performance optimization
+Use UUID in conjunction with proper security measures to prevent UUID-based attacks
+
+General Standards:
+
+Keep components small and focused for better maintainability
+Follow proper state management patterns for efficient data flow
+Implement proper testing practices for code reliability and maintainability
+Use ESLint and Prettier for consistent code style and quality
+Implement proper error handling and logging for better debugging and monitoring
+Follow security best practices for protecting user data and preventing common vulnerabilities

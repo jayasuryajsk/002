@@ -39,9 +39,17 @@ export function AIAssistant({ className }: { className?: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [])
 
+  // Add auto-scroll effect for streaming
+  useEffect(() => {
+    if (currentResponse) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [currentResponse])
+
+  // Keep existing scroll effect for new messages
   useEffect(() => {
     scrollToBottom()
-  }, [scrollToBottom])
+  }, [scrollToBottom, messages])
 
   const handleSubmit = async (text: string) => {
     if (isLoading) return
@@ -193,25 +201,29 @@ export function AIAssistant({ className }: { className?: string }) {
             ) : (
               <div className="space-y-4">
                 {messages.map((message, index) => (
-                  <div key={index} className="flex justify-start">
-                    <div className={`max-w-[80%] ${
+                  <div key={index} className="flex justify-start w-full">
+                    <div className={`w-full ${
                       message.role === "user" 
                         ? message.type === "file"
                           ? "bg-transparent" 
                           : "bg-gray-100 rounded-md px-4 py-2"
-                        : "prose prose-sm max-w-none"
+                        : "prose prose-sm max-w-none w-full"
                     }`}>
                       {message.role === "user" ? (
                         message.type === "file" ? (
                           <PreviewAttachment
-                            attachment={message.fileDetails}
+                            attachment={{
+                              name: message.fileDetails?.name || '',
+                              url: message.fileDetails?.url || '',
+                              contentType: message.fileDetails?.contentType
+                            }}
                             isUploading={false}
                           />
                         ) : (
                           <div className="text-[13px] text-gray-700">{message.content}</div>
                         )
                       ) : (
-                        <ReactMarkdown className="text-[13px] text-gray-700">
+                        <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded">
                           {message.content}
                         </ReactMarkdown>
                       )}
@@ -219,9 +231,9 @@ export function AIAssistant({ className }: { className?: string }) {
                   </div>
                 ))}
                 {currentResponse && (
-                  <div className="flex justify-start">
-                    <div className="prose prose-sm max-w-[80%]">
-                      <ReactMarkdown className="text-[13px] text-gray-700">
+                  <div className="flex justify-start w-full">
+                    <div className="prose prose-sm w-full">
+                      <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded">
                         {currentResponse}
                       </ReactMarkdown>
                     </div>

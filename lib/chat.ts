@@ -13,7 +13,7 @@ export type Message = {
 }
 
 export async function streamChat(
-  messages: Message[], 
+  messages: Message[],
   onChunk: (chunk: string) => void,
   fileId?: string
 ) {
@@ -32,13 +32,8 @@ export async function streamChat(
 
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ 
-        messages,
-        pdfContent 
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, pdfContent }),
     })
 
     if (!response.ok) {
@@ -55,21 +50,53 @@ export async function streamChat(
       const { done, value } = await reader.read()
       if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split("\n")
-      
-      buffer = lines.pop() || ""
+      // Decode the current chunk and append to our buffer
+      const chunk = decoder.decode(value, { stream: true })
+      console.log("Received raw chunk:", chunk)
+      buffer += chunk
 
-      for (const line of lines) {
+      // Split the buffer into lines and keep any partial line for later
+      const lines = buffer.split("\n")
+      buffer = lines.pop() ?? ""
+
+      for (let line of lines) {
+        line = line.trim()
+        // Handle standard SSE "data:" lines if present
         if (line.startsWith("data: ")) {
-          const data = line.slice(6)
-          if (data === "[DONE]") continue
-          try {
-            const text = JSON.parse(data)
-            if (text) onChunk(text)
-          } catch (e) {
-            console.error("Failed to parse chunk:", e)
+          const data = line.slice(6).trim()
+          if (data === "[DONE]") {
+            console.log("Stream ended (data line)")
+            break
           }
+          try {
+            // Try parsing as JSON first
+            const text = JSON.parse(data)
+            onChunk(text)
+          } catch (err) {
+            // If parsing fails, send the raw data
+            onChunk(data)
+          }
+        }
+        // Handle Gemini-style text chunks with "0:" prefix
+        else if (line.startsWith("0:")) {
+          let text = line.slice(2).trim()
+          try {
+            // Remove surrounding quotes if any
+            text = JSON.parse(text)
+          } catch (e) {
+            // leave text as is if JSON parsing fails
+          }
+          onChunk(text)
+        }
+        // Optionally log metadata or finish chunks (e.g. "f:" or "e:" / "d:")
+        else if (line.startsWith("f:")) {
+          console.log("Metadata chunk:", line.slice(2).trim())
+        }
+        else if (line.startsWith("e:") || line.startsWith("d:")) {
+          console.log("Finish/Error chunk:", line.slice(2).trim())
+        } else {
+          // Log any unexpected lines for debugging
+          console.log("Unhandled line:", line)
         }
       }
     }
@@ -103,9 +130,7 @@ export async function performSearchGrounding(
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
         messages: [{ role: "user", content: query }],
         useSearchGrounding: true 
@@ -121,26 +146,37 @@ export async function performSearchGrounding(
 
     const decoder = new TextDecoder()
     let buffer = ""
-
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split("\n")
-      
-      buffer = lines.pop() || ""
+      const chunk = decoder.decode(value, { stream: true })
+      console.log("Search raw chunk:", chunk)
+      buffer += chunk
 
-      for (const line of lines) {
+      const lines = buffer.split("\n")
+      buffer = lines.pop() ?? ""
+      for (let line of lines) {
+        line = line.trim()
         if (line.startsWith("data: ")) {
-          const data = line.slice(6)
+          const data = line.slice(6).trim()
           if (data === "[DONE]") continue
           try {
             const text = JSON.parse(data)
-            if (text) onChunk(text)
+            onChunk(text)
           } catch (e) {
-            console.error("Failed to parse chunk:", e)
+            onChunk(data)
           }
+        } else if (line.startsWith("0:")) {
+          let text = line.slice(2).trim()
+          try {
+            text = JSON.parse(text)
+          } catch (e) {}
+          onChunk(text)
+        } else if (line.startsWith("e:") || line.startsWith("d:")) {
+          console.log("Search finish/error chunk:", line.slice(2).trim())
+        } else {
+          console.log("Search unhandled line:", line)
         }
       }
     }
@@ -149,4 +185,3 @@ export async function performSearchGrounding(
     throw error
   }
 }
-
