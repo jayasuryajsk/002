@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Plus, History, MoreHorizontal, Globe, ArrowUp, Clock, Paperclip } from "lucide-react"
+import { Plus, History, MoreHorizontal, Globe, ArrowUp, Clock, Paperclip, X } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,20 +20,71 @@ import { Loader2 } from "lucide-react"
 import type React from "react"
 import { AIInputWithSearch } from "@/components/ui/ai-input-with-search"
 import { PreviewAttachment } from "@/components/ui/PreviewAttachment"
+import { v4 as uuidv4 } from 'uuid'
+
+type ChatThread = {
+  id: string
+  title: string
+  messages: Message[]
+  currentResponse: string
+  isLoading: boolean
+  pdfFile: { id: string; name: string; previewUrl?: string } | null
+}
 
 export function AIAssistant({ className }: { className?: string }) {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [currentPdfFile, setCurrentPdfFile] = useState<{ id: string; name: string; previewUrl?: string } | null>(null)
+  const [threads, setThreads] = useState<ChatThread[]>([{
+    id: uuidv4(),
+    title: 'New Chat',
+    messages: [],
+    currentResponse: '',
+    isLoading: false,
+    pdfFile: null
+  }])
+  const [activeThreadId, setActiveThreadId] = useState<string>(threads[0].id)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [currentResponse, setCurrentResponse] = useState("")
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
-  const [width, setWidth] = useState(400) // Default width
+  const [width, setWidth] = useState(400)
   const isResizing = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
+
+  const activeThread = threads.find(t => t.id === activeThreadId)!
+
+  const createNewThread = () => {
+    const newThread: ChatThread = {
+      id: uuidv4(),
+      title: 'New Chat',
+      messages: [],
+      currentResponse: '',
+      isLoading: false,
+      pdfFile: null
+    }
+    setThreads(prev => [...prev, newThread])
+    setActiveThreadId(newThread.id)
+  }
+
+  const updateThread = (threadId: string, updates: Partial<ChatThread>) => {
+    setThreads(prev => prev.map(thread => 
+      thread.id === threadId 
+        ? { ...thread, ...updates }
+        : thread
+    ))
+  }
+
+  const deleteThread = (threadId: string) => {
+    setThreads(prev => prev.filter(thread => thread.id !== threadId))
+    if (activeThreadId === threadId) {
+      setActiveThreadId(threads[0].id)
+    }
+  }
+
+  // Update thread title based on first message
+  useEffect(() => {
+    if (activeThread.messages.length === 1 && activeThread.messages[0].role === 'user') {
+      const title = activeThread.messages[0].content.slice(0, 30) + (activeThread.messages[0].content.length > 30 ? '...' : '')
+      updateThread(activeThread.id, { title })
+    }
+  }, [activeThread.messages])
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -41,18 +92,18 @@ export function AIAssistant({ className }: { className?: string }) {
 
   // Add auto-scroll effect for streaming
   useEffect(() => {
-    if (currentResponse) {
+    if (activeThread.currentResponse) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [currentResponse])
+  }, [activeThread.currentResponse])
 
   // Keep existing scroll effect for new messages
   useEffect(() => {
     scrollToBottom()
-  }, [scrollToBottom, messages])
+  }, [scrollToBottom, activeThread.messages])
 
   const handleSubmit = async (text: string) => {
-    if (isLoading) return
+    if (activeThread.isLoading) return
 
     const newMessages: Message[] = []
 
@@ -62,7 +113,7 @@ export function AIAssistant({ className }: { className?: string }) {
     }
 
     // If there's a PDF, add it as a separate bubble with preview
-    if (currentPdfFile) {
+    if (activeThread.pdfFile) {
       newMessages.push({ 
         role: "user", 
         content: text.trim() ? text : "Please analyze this PDF.",
@@ -70,11 +121,11 @@ export function AIAssistant({ className }: { className?: string }) {
       })
       newMessages.push({ 
         role: "user", 
-        content: currentPdfFile.name,
+        content: activeThread.pdfFile.name,
         type: "file",
         fileDetails: {
-          name: currentPdfFile.name,
-          url: currentPdfFile.previewUrl || '',
+          name: activeThread.pdfFile.name,
+          url: activeThread.pdfFile.previewUrl || '',
           contentType: 'application/pdf'
         }
       })
@@ -82,24 +133,27 @@ export function AIAssistant({ className }: { className?: string }) {
 
     if (newMessages.length === 0) return
 
-    setMessages((prev) => [...prev, ...newMessages])
-    setIsLoading(true)
-    setCurrentResponse("")
+    updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
+    updateThread(activeThread.id, { isLoading: true })
+    updateThread(activeThread.id, { currentResponse: "" })
 
     try {
       let fullResponse = ""
-      await streamChat([...messages, ...newMessages], (chunk) => {
+      await streamChat([...activeThread.messages, ...newMessages], (chunk) => {
         fullResponse += chunk
-        setCurrentResponse(fullResponse)
-      }, currentPdfFile?.id)
+        updateThread(activeThread.id, { currentResponse: fullResponse })
+      }, activeThread.pdfFile?.id)
 
-      setMessages((prev) => [...prev, { role: "assistant", content: fullResponse }])
-      setCurrentResponse("")
+      updateThread(activeThread.id, { 
+        messages: [...activeThread.messages, ...newMessages, { role: "assistant", content: fullResponse }],
+        isLoading: false,
+        currentResponse: ""
+      })
       // Clear PDF file after processing
-      if (currentPdfFile?.previewUrl) {
-        URL.revokeObjectURL(currentPdfFile.previewUrl)
+      if (activeThread.pdfFile?.previewUrl) {
+        URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
       }
-      setCurrentPdfFile(null)
+      updateThread(activeThread.id, { pdfFile: null })
     } catch (error) {
       console.error("Chat error:", error)
       toast({
@@ -107,8 +161,6 @@ export function AIAssistant({ className }: { className?: string }) {
         description: "Failed to process your request. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -158,7 +210,12 @@ export function AIAssistant({ className }: { className?: string }) {
         <div className="flex items-center justify-between h-12 px-4 border-b border-gray-200">
           <span className="text-[13px] text-gray-700 font-medium">AI Assistant (Gemini 2.0 Flash)</span>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-7 w-7 text-gray-500 hover:bg-gray-100"
+              onClick={createNewThread}
+            >
               <Plus className="h-4 w-4" />
             </Button>
             <DropdownMenu>
@@ -167,24 +224,34 @@ export function AIAssistant({ className }: { className?: string }) {
                   <History className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel className="text-xs">Recent Conversations</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="text-xs">Chat Threads</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-xs">
-                  <Clock className="h-3 w-3 mr-2" />
-                  Project Requirements Discussion
-                  <DropdownMenuShortcut>2h ago</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-xs">
-                  <Clock className="h-3 w-3 mr-2" />
-                  Technical Specifications Review
-                  <DropdownMenuShortcut>5h ago</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="text-xs">
-                  <Clock className="h-3 w-3 mr-2" />
-                  Budget Analysis
-                  <DropdownMenuShortcut>1d ago</DropdownMenuShortcut>
-                </DropdownMenuItem>
+                {threads.map((thread) => (
+                  <DropdownMenuItem 
+                    key={thread.id} 
+                    className="text-xs flex items-center justify-between group"
+                    onClick={() => setActiveThreadId(thread.id)}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{thread.title}</span>
+                    </div>
+                    {threads.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteThread(thread.id)
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
@@ -194,13 +261,13 @@ export function AIAssistant({ className }: { className?: string }) {
         </div>
         <div className="flex flex-col h-[calc(100vh-112px)]">
           <ScrollArea className="flex-1 p-4">
-            {messages.length === 0 ? (
+            {activeThread.messages.length === 0 ? (
               <p className="text-[13px] text-gray-600">
                 No chat history yet. Ask a question or upload a PDF to get started.
               </p>
             ) : (
               <div className="space-y-4">
-                {messages.map((message, index) => (
+                {activeThread.messages.map((message, index) => (
                   <div key={index} className="flex justify-start w-full">
                     <div className={`w-full ${
                       message.role === "user" 
@@ -230,16 +297,16 @@ export function AIAssistant({ className }: { className?: string }) {
                     </div>
                   </div>
                 ))}
-                {currentResponse && (
+                {activeThread.currentResponse && (
                   <div className="flex justify-start w-full">
                     <div className="prose prose-sm w-full">
                       <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded">
-                        {currentResponse}
+                        {activeThread.currentResponse}
                       </ReactMarkdown>
                     </div>
                   </div>
                 )}
-                {isLoading && !currentResponse && (
+                {activeThread.isLoading && !activeThread.currentResponse && (
                   <div className="flex items-center gap-2 text-[13px] text-gray-500">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span>Thinking...</span>
@@ -251,47 +318,50 @@ export function AIAssistant({ className }: { className?: string }) {
           </ScrollArea>
           <div className="border-gray-200">
             <AIInputWithSearch
-              placeholder={currentPdfFile 
+              placeholder={activeThread.pdfFile 
                 ? "Ask a question about the PDF..."
                 : "Ask a question or upload a PDF..."}
               containerWidth={width}
               onSubmit={async (value, withSearch) => {
-                if (isLoading) return
+                if (activeThread.isLoading) return
 
                 // If we have a PDF loaded, always use PDF flow regardless of search toggle
-                if (currentPdfFile) {
+                if (activeThread.pdfFile) {
                   // Only add one message for PDF questions
                   const newMessages: Message[] = [
                     { role: "user", content: value || "Please analyze this PDF.", type: "text" },
-                    { role: "user", content: currentPdfFile.name, type: "file", fileDetails: { 
-                      name: currentPdfFile.name, 
-                      url: currentPdfFile.previewUrl || '', 
+                    { role: "user", content: activeThread.pdfFile.name, type: "file", fileDetails: { 
+                      name: activeThread.pdfFile.name, 
+                      url: activeThread.pdfFile.previewUrl || '', 
                       contentType: 'application/pdf' 
                     }}
                   ]
                   
-                  setMessages(prev => [...prev, ...newMessages])
-                  setIsLoading(true)
-                  setCurrentResponse("")
+                  updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
+                  updateThread(activeThread.id, { isLoading: true })
+                  updateThread(activeThread.id, { currentResponse: "" })
 
                   try {
                     let fullResponse = ""
                     await streamChat(
-                      [...messages, ...newMessages],
+                      [...activeThread.messages, ...newMessages],
                       (chunk) => {
                         fullResponse += chunk
-                        setCurrentResponse(fullResponse)
+                        updateThread(activeThread.id, { currentResponse: fullResponse })
                       },
-                      currentPdfFile.id
+                      activeThread.pdfFile.id
                     )
 
-                    setMessages(prev => [...prev, { role: "assistant", content: fullResponse }])
-                    setCurrentResponse("")
+                    updateThread(activeThread.id, { 
+                      messages: [...activeThread.messages, ...newMessages, { role: "assistant", content: fullResponse }],
+                      isLoading: false,
+                      currentResponse: ""
+                    })
                     // Clear PDF file after processing
-                    if (currentPdfFile.previewUrl) {
-                      URL.revokeObjectURL(currentPdfFile.previewUrl)
+                    if (activeThread.pdfFile.previewUrl) {
+                      URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
                     }
-                    setCurrentPdfFile(null)
+                    updateThread(activeThread.id, { pdfFile: null })
                   } catch (error) {
                     console.error("Chat error:", error)
                     toast({
@@ -299,32 +369,33 @@ export function AIAssistant({ className }: { className?: string }) {
                       description: "Failed to process your request. Please try again.",
                       variant: "destructive",
                     })
-                  } finally {
-                    setIsLoading(false)
                   }
                   return
                 }
                 
                 // Otherwise handle normal search/chat
                 if (withSearch) {
-                  setIsLoading(true)
-                  setCurrentResponse("")
+                  updateThread(activeThread.id, { isLoading: true })
+                  updateThread(activeThread.id, { currentResponse: "" })
                   const userMessage: Message = { role: "user", content: `Search: ${value}` }
-                  setMessages(prev => [...prev, userMessage])
+                  updateThread(activeThread.id, { messages: [...activeThread.messages, userMessage] })
 
                   try {
                     let fullResponse = ""
                     await performSearchGrounding(value, (chunk) => {
                       fullResponse += chunk
-                      setCurrentResponse(fullResponse)
+                      updateThread(activeThread.id, { currentResponse: fullResponse })
                     })
                     
                     const assistantMessage: Message = { 
                       role: "assistant", 
                       content: fullResponse 
                     }
-                    setMessages(prev => [...prev, assistantMessage])
-                    setCurrentResponse("")
+                    updateThread(activeThread.id, { 
+                      messages: [...activeThread.messages, userMessage, assistantMessage],
+                      isLoading: false,
+                      currentResponse: ""
+                    })
                   } catch (error) {
                     console.error("Search grounding error:", error)
                     toast({
@@ -332,8 +403,6 @@ export function AIAssistant({ className }: { className?: string }) {
                       description: "Failed to perform search grounding. Please try again.",
                       variant: "destructive",
                     })
-                  } finally {
-                    setIsLoading(false)
                   }
                 } else {
                   await handleSubmit(value)
@@ -344,7 +413,7 @@ export function AIAssistant({ className }: { className?: string }) {
                   const formData = new FormData()
                   formData.append("file", file)
 
-                  setIsLoading(true)
+                  updateThread(activeThread.id, { isLoading: true })
                   try {
                     const response = await fetch("/api/process-pdf", {
                       method: "POST",
@@ -355,7 +424,7 @@ export function AIAssistant({ className }: { className?: string }) {
 
                     const { fileId, fileName } = await response.json()
                     const previewUrl = URL.createObjectURL(file)
-                    setCurrentPdfFile({ id: fileId, name: fileName, previewUrl })
+                    updateThread(activeThread.id, { pdfFile: { id: fileId, name: fileName, previewUrl } })
                   } catch (error) {
                     console.error("PDF upload error:", error)
                     toast({
@@ -364,7 +433,7 @@ export function AIAssistant({ className }: { className?: string }) {
                       variant: "destructive",
                     })
                   } finally {
-                    setIsLoading(false)
+                    updateThread(activeThread.id, { isLoading: false })
                   }
                 } else {
                   toast({
