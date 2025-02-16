@@ -21,6 +21,7 @@ import type React from "react"
 import { AIInputWithSearch } from "@/components/ui/ai-input-with-search"
 import { PreviewAttachment } from "@/components/ui/PreviewAttachment"
 import { v4 as uuidv4 } from 'uuid'
+import { cn } from "@/lib/utils"
 
 type ChatThread = {
   id: string
@@ -31,36 +32,122 @@ type ChatThread = {
   pdfFile: { id: string; name: string; previewUrl?: string } | null
 }
 
-export function AIAssistant({ className }: { className?: string }) {
-  const [threads, setThreads] = useState<ChatThread[]>([{
-    id: uuidv4(),
-    title: 'New Chat',
-    messages: [],
-    currentResponse: '',
-    isLoading: false,
-    pdfFile: null
-  }])
-  const [activeThreadId, setActiveThreadId] = useState<string>(threads[0].id)
+interface AIAssistantProps {
+  className?: string;
+  onChatChange?: (chatId: string | null) => void;
+}
+
+export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
+  const [threads, setThreads] = useState<ChatThread[]>([])
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const [width, setWidth] = useState(400)
   const isResizing = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const activeThread = threads.find(t => t.id === activeThreadId)!
+  const activeThread = activeThreadId ? threads.find(t => t.id === activeThreadId) : null
 
-  const createNewThread = () => {
-    const newThread: ChatThread = {
-      id: uuidv4(),
-      title: 'New Chat',
-      messages: [],
-      currentResponse: '',
-      isLoading: false,
-      pdfFile: null
+  // Load chats from database on mount
+  useEffect(() => {
+    const loadChats = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch('/api/chats')
+        if (!response.ok) throw new Error('Failed to load chats')
+        const chats = await response.json()
+        
+        const formattedChats: ChatThread[] = chats.map((chat: any) => ({
+          id: chat.id,
+          title: chat.title || 'New Chat',
+          messages: chat.messages.map((msg: any) => ({
+            role: msg.role,
+            content: msg.content,
+            type: msg.type || 'text',
+            fileDetails: msg.fileDetails ? JSON.parse(msg.fileDetails) : null
+          })),
+          currentResponse: '',
+          isLoading: false,
+          pdfFile: null
+        }))
+        
+        setThreads(formattedChats)
+        
+        // If we have chats, set the first one as active, otherwise create a new one
+        if (formattedChats.length > 0) {
+          setActiveThreadId(formattedChats[0].id)
+        } else {
+          // No existing chats, create a new one
+          await createNewThread()
+        }
+      } catch (error) {
+        console.error('Error loading chats:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load chat history.",
+          variant: "destructive",
+        })
+        // Create a new thread if loading fails
+        await createNewThread()
+      } finally {
+        setIsLoading(false)
+      }
     }
-    setThreads(prev => [...prev, newThread])
-    setActiveThreadId(newThread.id)
+    loadChats()
+  }, [])
+
+  const createNewThread = async () => {
+    try {
+      // Create optimistic thread immediately
+      const optimisticThread: ChatThread = {
+        id: 'temp-' + Date.now(), // Temporary ID until we get the real one
+        title: 'New Chat',
+        messages: [],
+        currentResponse: '',
+        isLoading: false, // Changed to false to hide loading state
+        pdfFile: null
+      }
+      
+      // Update UI immediately
+      setThreads(prev => [...prev, optimisticThread])
+      setActiveThreadId(optimisticThread.id)
+
+      // Create the actual chat in the database
+      const response = await fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Chat' })
+      })
+      
+      if (!response.ok) throw new Error('Failed to create chat')
+      const savedChat = await response.json()
+      
+      // Replace optimistic thread with real one (keeping same visual state)
+      const newThread: ChatThread = {
+        id: savedChat.id,
+        title: 'New Chat',
+        messages: [],
+        currentResponse: '',
+        isLoading: false,
+        pdfFile: null
+      }
+      
+      setThreads(prev => prev.map(thread => 
+        thread.id === optimisticThread.id ? newThread : thread
+      ))
+      setActiveThreadId(newThread.id)
+    } catch (error) {
+      console.error('Error creating chat:', error)
+      toast({
+        title: "Error",
+        description: "Failed to create new chat.",
+        variant: "destructive",
+      })
+      // Remove the optimistic thread if creation failed
+      setThreads(prev => prev.filter(thread => !thread.id.startsWith('temp-')))
+    }
   }
 
   const updateThread = (threadId: string, updates: Partial<ChatThread>) => {
@@ -71,20 +158,42 @@ export function AIAssistant({ className }: { className?: string }) {
     ))
   }
 
-  const deleteThread = (threadId: string) => {
-    setThreads(prev => prev.filter(thread => thread.id !== threadId))
-    if (activeThreadId === threadId) {
-      setActiveThreadId(threads[0].id)
+  const deleteThread = async (threadId: string) => {
+    try {
+      const response = await fetch(`/api/chats/${threadId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) throw new Error('Failed to delete chat');
+
+      setThreads(prev => {
+        const newThreads = prev.filter(thread => thread.id !== threadId);
+        // If we're deleting the active thread, switch to another one
+        if (activeThreadId === threadId && newThreads.length > 0) {
+          setActiveThreadId(newThreads[0].id);
+        } else if (newThreads.length === 0) {
+          // If no threads left, create a new one
+          createNewThread();
+        }
+        return newThreads;
+      });
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete chat.",
+        variant: "destructive",
+      });
     }
   }
 
   // Update thread title based on first message
   useEffect(() => {
-    if (activeThread.messages.length === 1 && activeThread.messages[0].role === 'user') {
+    if (activeThread?.messages.length === 1 && activeThread.messages[0].role === 'user') {
       const title = activeThread.messages[0].content.slice(0, 30) + (activeThread.messages[0].content.length > 30 ? '...' : '')
       updateThread(activeThread.id, { title })
     }
-  }, [activeThread.messages])
+  }, [activeThread?.messages])
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -92,18 +201,18 @@ export function AIAssistant({ className }: { className?: string }) {
 
   // Add auto-scroll effect for streaming
   useEffect(() => {
-    if (activeThread.currentResponse) {
+    if (activeThread?.currentResponse) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [activeThread.currentResponse])
+  }, [activeThread?.currentResponse])
 
   // Keep existing scroll effect for new messages
   useEffect(() => {
     scrollToBottom()
-  }, [scrollToBottom, activeThread.messages])
+  }, [scrollToBottom, activeThread?.messages])
 
   const handleSubmit = async (text: string) => {
-    if (activeThread.isLoading) return
+    if (!activeThread || activeThread.isLoading) return
 
     const newMessages: Message[] = []
 
@@ -114,11 +223,13 @@ export function AIAssistant({ className }: { className?: string }) {
 
     // If there's a PDF, add it as a separate bubble with preview
     if (activeThread.pdfFile) {
-      newMessages.push({ 
-        role: "user", 
-        content: text.trim() ? text : "Please analyze this PDF.",
-        type: "text"
-      })
+      if (!text.trim()) {
+        newMessages.push({ 
+          role: "user", 
+          content: "Please analyze this PDF.",
+          type: "text"
+        })
+      }
       newMessages.push({ 
         role: "user", 
         content: activeThread.pdfFile.name,
@@ -133,33 +244,68 @@ export function AIAssistant({ className }: { className?: string }) {
 
     if (newMessages.length === 0) return
 
-    updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
-    updateThread(activeThread.id, { isLoading: true })
-    updateThread(activeThread.id, { currentResponse: "" })
+    // Update UI optimistically
+    const updatedMessages = [...activeThread.messages, ...newMessages]
+    updateThread(activeThread.id, { 
+      messages: updatedMessages,
+      isLoading: true,
+      currentResponse: "" 
+    })
 
     try {
+      // First, save the user messages
+      const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages })
+      });
+
+      if (!userResponse.ok) {
+        throw new Error('Failed to save user messages');
+      }
+
+      // Then start streaming and wait for completion
       let fullResponse = ""
-      await streamChat([...activeThread.messages, ...newMessages], (chunk) => {
+      await streamChat(updatedMessages, (chunk) => {
         fullResponse += chunk
         updateThread(activeThread.id, { currentResponse: fullResponse })
-      }, activeThread.pdfFile?.id)
+      }, activeThread.pdfFile?.id);
 
-      updateThread(activeThread.id, { 
-        messages: [...activeThread.messages, ...newMessages, { role: "assistant", content: fullResponse }],
-        isLoading: false,
-        currentResponse: ""
-      })
-      // Clear PDF file after processing
-      if (activeThread.pdfFile?.previewUrl) {
-        URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
+      // After streaming is complete, save the assistant's message
+      const assistantMessage: Message = { 
+        role: "assistant", 
+        content: fullResponse,
+        type: "text"
       }
-      updateThread(activeThread.id, { pdfFile: null })
+      
+      const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [assistantMessage] })
+      })
+
+      if (!assistantResponse.ok) {
+        throw new Error('Failed to save assistant message');
+      }
+
+      // Update UI with the final state
+      updateThread(activeThread.id, { 
+        messages: [...updatedMessages, assistantMessage],
+        currentResponse: "",
+        isLoading: false,
+        pdfFile: null // Clear the PDF after processing
+      })
     } catch (error) {
-      console.error("Chat error:", error)
       toast({
         title: "Error",
-        description: "Failed to process your request. Please try again.",
+        description: "Failed to process your message. Please try again.",
         variant: "destructive",
+      })
+      // Revert the thread state on error
+      updateThread(activeThread.id, { 
+        messages: activeThread.messages,
+        currentResponse: "",
+        isLoading: false
       })
     }
   }
@@ -196,6 +342,11 @@ export function AIAssistant({ className }: { className?: string }) {
       document.removeEventListener('mouseup', stopResizing)
     }
   }, [resize, stopResizing])
+
+  // Update the parent component when active thread changes
+  useEffect(() => {
+    onChatChange?.(activeThreadId)
+  }, [activeThreadId, onChatChange])
 
   return (
     <div 
@@ -261,9 +412,18 @@ export function AIAssistant({ className }: { className?: string }) {
         </div>
         <div className="flex flex-col h-[calc(100vh-112px)]">
           <ScrollArea className="flex-1 p-4">
-            {activeThread.messages.length === 0 ? (
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-[13px] text-gray-500">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Loading chats...</span>
+              </div>
+            ) : !activeThread ? (
               <p className="text-[13px] text-gray-600">
-                No chat history yet. Ask a question or upload a PDF to get started.
+                No chat selected
+              </p>
+            ) : activeThread.messages.length === 0 ? (
+              <p className="text-[13px] text-gray-600">
+                Ask a question or upload a PDF to get started.
               </p>
             ) : (
               <div className="space-y-4">
@@ -318,90 +478,93 @@ export function AIAssistant({ className }: { className?: string }) {
           </ScrollArea>
           <div className="border-gray-200">
             <AIInputWithSearch
-              placeholder={activeThread.pdfFile 
+              placeholder={activeThread?.pdfFile 
                 ? "Ask a question about the PDF..."
                 : "Ask a question or upload a PDF..."}
               containerWidth={width}
               onSubmit={async (value, withSearch) => {
+                if (!activeThread) {
+                  toast({
+                    title: "Error",
+                    description: "No active chat selected. Please try again.",
+                    variant: "destructive",
+                  })
+                  return
+                }
+
                 if (activeThread.isLoading) return
 
                 // If we have a PDF loaded, always use PDF flow regardless of search toggle
                 if (activeThread.pdfFile) {
-                  // Only add one message for PDF questions
-                  const newMessages: Message[] = [
-                    { role: "user", content: value || "Please analyze this PDF.", type: "text" },
-                    { role: "user", content: activeThread.pdfFile.name, type: "file", fileDetails: { 
-                      name: activeThread.pdfFile.name, 
-                      url: activeThread.pdfFile.previewUrl || '', 
-                      contentType: 'application/pdf' 
-                    }}
-                  ]
-                  
-                  updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
-                  updateThread(activeThread.id, { isLoading: true })
-                  updateThread(activeThread.id, { currentResponse: "" })
-
-                  try {
-                    let fullResponse = ""
-                    await streamChat(
-                      [...activeThread.messages, ...newMessages],
-                      (chunk) => {
-                        fullResponse += chunk
-                        updateThread(activeThread.id, { currentResponse: fullResponse })
-                      },
-                      activeThread.pdfFile.id
-                    )
-
-                    updateThread(activeThread.id, { 
-                      messages: [...activeThread.messages, ...newMessages, { role: "assistant", content: fullResponse }],
-                      isLoading: false,
-                      currentResponse: ""
-                    })
-                    // Clear PDF file after processing
-                    if (activeThread.pdfFile.previewUrl) {
-                      URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
-                    }
-                    updateThread(activeThread.id, { pdfFile: null })
-                  } catch (error) {
-                    console.error("Chat error:", error)
-                    toast({
-                      title: "Error",
-                      description: "Failed to process your request. Please try again.",
-                      variant: "destructive",
-                    })
-                  }
+                  await handleSubmit(value)
                   return
                 }
                 
                 // Otherwise handle normal search/chat
                 if (withSearch) {
-                  updateThread(activeThread.id, { isLoading: true })
-                  updateThread(activeThread.id, { currentResponse: "" })
-                  const userMessage: Message = { role: "user", content: `Search: ${value}` }
-                  updateThread(activeThread.id, { messages: [...activeThread.messages, userMessage] })
+                  const userMessage: Message = { role: "user", content: `Search: ${value}`, type: "text" }
+                  
+                  // Update UI optimistically
+                  const updatedMessages = [...activeThread.messages, userMessage]
+                  updateThread(activeThread.id, { 
+                    messages: updatedMessages,
+                    isLoading: true,
+                    currentResponse: "" 
+                  })
 
                   try {
+                    // First save the user message
+                    const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ messages: [userMessage] })
+                    });
+
+                    if (!userResponse.ok) {
+                      throw new Error('Failed to save user message');
+                    }
+
+                    // Then perform the search
                     let fullResponse = ""
                     await performSearchGrounding(value, (chunk) => {
                       fullResponse += chunk
                       updateThread(activeThread.id, { currentResponse: fullResponse })
                     })
                     
+                    // After search is complete, save the assistant's message
                     const assistantMessage: Message = { 
                       role: "assistant", 
-                      content: fullResponse 
+                      content: fullResponse,
+                      type: "text"
                     }
+
+                    const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ messages: [assistantMessage] })
+                    })
+
+                    if (!assistantResponse.ok) {
+                      throw new Error('Failed to save assistant message');
+                    }
+
+                    // Update UI with final state
                     updateThread(activeThread.id, { 
-                      messages: [...activeThread.messages, userMessage, assistantMessage],
+                      messages: [...updatedMessages, assistantMessage],
                       isLoading: false,
                       currentResponse: ""
                     })
                   } catch (error) {
-                    console.error("Search grounding error:", error)
                     toast({
                       title: "Error",
-                      description: "Failed to perform search grounding. Please try again.",
+                      description: "Failed to perform search. Please try again.",
                       variant: "destructive",
+                    })
+                    // Revert thread state on error
+                    updateThread(activeThread.id, { 
+                      messages: activeThread.messages,
+                      isLoading: false,
+                      currentResponse: ""
                     })
                   }
                 } else {
@@ -409,6 +572,15 @@ export function AIAssistant({ className }: { className?: string }) {
                 }
               }}
               onFileSelect={async (file) => {
+                if (!activeThread) {
+                  toast({
+                    title: "Error",
+                    description: "No active chat selected. Please try again.",
+                    variant: "destructive",
+                  })
+                  return
+                }
+
                 if (file.type === "application/pdf") {
                   const formData = new FormData()
                   formData.append("file", file)

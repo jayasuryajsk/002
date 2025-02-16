@@ -1,30 +1,30 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { AgentProgressCards } from "@/components/AgentProgressCards"
+import { TipTapEditor } from "@/components/TipTapEditor"
 import { useTenderAgents } from "@/lib/hooks/use-tender-agents"
 import type { TenderDocument } from "@/lib/agents/types"
 
 export default function TenderWriterPage() {
   const { generateTender, isProcessing } = useTenderAgents()
-  const [agents, setAgents] = useState([
-    { name: "Researcher", status: "idle", progress: 0, description: "Ready to analyze requirements" },
-    { name: "Writer", status: "idle", progress: 0, description: "Ready to generate content" },
-    { name: "Compliance", status: "idle", progress: 0, description: "Ready to check requirements" },
-  ])
-
+  const [content, setContent] = useState("")
   const [tender, setTender] = useState<TenderDocument | null>(null)
+  const [agentProgress, setAgentProgress] = useState({
+    Researcher: { status: "idle", progress: 0, message: "" },
+    Writer: { status: "idle", progress: 0, message: "" },
+    Compliance: { status: "idle", progress: 0, message: "" },
+  })
 
   const updateAgentProgress = (
-    name: string,
-    status: "idle" | "working" | "completed" | "error",
+    agent: string,
+    status: string,
     progress: number,
-    description: string,
+    message: string
   ) => {
-    setAgents((prevAgents) =>
-      prevAgents.map((agent) => (agent.name === name ? { ...agent, status, progress, description } : agent)),
-    )
+    setAgentProgress((prev) => ({
+      ...prev,
+      [agent]: { status, progress, message },
+    }))
   }
 
   const handleGenerateTender = async () => {
@@ -47,8 +47,6 @@ export default function TenderWriterPage() {
     try {
       const completedTender = await generateTender(initialTender)
       setTender(completedTender)
-
-      // Simulate progress updates (in a real scenario, these would come from the actual agents)
       updateAgentProgress("Researcher", "completed", 100, "Requirements analyzed")
       updateAgentProgress("Writer", "completed", 100, "Content generated")
       updateAgentProgress("Compliance", "completed", 100, "All requirements met")
@@ -65,24 +63,41 @@ export default function TenderWriterPage() {
       updateAgentProgress("Writer", "working", 30, "Generating tender content")
       updateAgentProgress("Compliance", "working", 0, "Waiting for content")
     }
-  }, [isProcessing, updateAgentProgress]) // Added updateAgentProgress to dependencies
+  }, [isProcessing])
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Tender Writer</h1>
-      <Button onClick={handleGenerateTender} disabled={isProcessing}>
-        {isProcessing ? "Generating..." : "Generate Tender"}
-      </Button>
-      <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Agent Progress</h2>
-        <AgentProgressCards agents={agents} />
+    <div className="h-[calc(100vh-120px)] flex flex-col">
+      <div className="flex-1 bg-white">
+        <TipTapEditor
+          content={content}
+          onChange={setContent}
+          className="h-full"
+          placeholder="Start writing your tender document..."
+        />
       </div>
-      {tender && (
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">Generated Tender</h2>
-          <pre className="bg-gray-100 p-4 rounded-lg overflow-auto">{JSON.stringify(tender, null, 2)}</pre>
+      <div className="h-[60px] border-t bg-white px-4 flex items-center">
+        <div className="flex-1 flex gap-4">
+          {Object.entries(agentProgress).map(([agent, { status, progress, message }]) => (
+            <div key={agent} className="flex items-center gap-2">
+              <span className="text-sm font-medium">{agent}:</span>
+              <span className="text-sm text-gray-600">{message}</span>
+              <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
-      )}
+        <button
+          onClick={handleGenerateTender}
+          disabled={isProcessing}
+          className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+        >
+          {isProcessing ? "Generating..." : "Generate Tender"}
+        </button>
+      </div>
     </div>
   )
 }
