@@ -1,5 +1,22 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import type { Message } from '@/lib/chat';
+
+type ChatWithMessages = {
+  id: string;
+  title: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  messages: Array<{
+    id: string;
+    content: string;
+    role: string;
+    type: string;
+    fileDetails: string | null;
+    createdAt: Date;
+    chatId: string;
+  }>;
+};
 
 export async function POST(req: Request) {
   try {
@@ -16,7 +33,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json(chat);
   } catch (error) {
-    console.error('Error creating chat:', error);
     return NextResponse.json(
       { error: 'Failed to create chat' },
       { status: 500 }
@@ -35,13 +51,12 @@ export async function GET() {
         }
       },
       orderBy: {
-        createdAt: 'desc'
+        createdAt: 'asc'
       }
     });
-
+    
     return NextResponse.json(chats);
   } catch (error) {
-    console.error('Error fetching chats:', error);
     return NextResponse.json(
       { error: 'Failed to fetch chats' },
       { status: 500 }

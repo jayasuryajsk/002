@@ -21,6 +21,7 @@ import type React from "react"
 import { AIInputWithSearch } from "@/components/ui/ai-input-with-search"
 import { PreviewAttachment } from "@/components/ui/PreviewAttachment"
 import { v4 as uuidv4 } from 'uuid'
+import { cn } from "@/lib/utils"
 
 type ChatThread = {
   id: string
@@ -56,12 +57,12 @@ export function AIAssistant({ className }: { className?: string }) {
         const formattedChats: ChatThread[] = chats.map((chat: any) => ({
           id: chat.id,
           title: chat.title || 'New Chat',
-          messages: Array.isArray(chat.messages) ? chat.messages.map((msg: any) => ({
+          messages: chat.messages.map((msg: any) => ({
             role: msg.role,
             content: msg.content,
             type: msg.type || 'text',
-            fileDetails: msg.fileDetails
-          })) : [],
+            fileDetails: msg.fileDetails ? JSON.parse(msg.fileDetails) : null
+          })),
           currentResponse: '',
           isLoading: false,
           pdfFile: null
@@ -94,6 +95,21 @@ export function AIAssistant({ className }: { className?: string }) {
 
   const createNewThread = async () => {
     try {
+      // Create optimistic thread immediately
+      const optimisticThread: ChatThread = {
+        id: 'temp-' + Date.now(), // Temporary ID until we get the real one
+        title: 'New Chat',
+        messages: [],
+        currentResponse: '',
+        isLoading: false, // Changed to false to hide loading state
+        pdfFile: null
+      }
+      
+      // Update UI immediately
+      setThreads(prev => [...prev, optimisticThread])
+      setActiveThreadId(optimisticThread.id)
+
+      // Create the actual chat in the database
       const response = await fetch('/api/chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,6 +119,7 @@ export function AIAssistant({ className }: { className?: string }) {
       if (!response.ok) throw new Error('Failed to create chat')
       const savedChat = await response.json()
       
+      // Replace optimistic thread with real one (keeping same visual state)
       const newThread: ChatThread = {
         id: savedChat.id,
         title: 'New Chat',
@@ -112,7 +129,9 @@ export function AIAssistant({ className }: { className?: string }) {
         pdfFile: null
       }
       
-      setThreads(prev => [...prev, newThread])
+      setThreads(prev => prev.map(thread => 
+        thread.id === optimisticThread.id ? newThread : thread
+      ))
       setActiveThreadId(newThread.id)
     } catch (error) {
       console.error('Error creating chat:', error)
@@ -121,6 +140,8 @@ export function AIAssistant({ className }: { className?: string }) {
         description: "Failed to create new chat.",
         variant: "destructive",
       })
+      // Remove the optimistic thread if creation failed
+      setThreads(prev => prev.filter(thread => !thread.id.startsWith('temp-')))
     }
   }
 
@@ -197,11 +218,13 @@ export function AIAssistant({ className }: { className?: string }) {
 
     // If there's a PDF, add it as a separate bubble with preview
     if (activeThread.pdfFile) {
-      newMessages.push({ 
-        role: "user", 
-        content: text.trim() ? text : "Please analyze this PDF.",
-        type: "text"
-      })
+      if (!text.trim()) {
+        newMessages.push({ 
+          role: "user", 
+          content: "Please analyze this PDF.",
+          type: "text"
+        })
+      }
       newMessages.push({ 
         role: "user", 
         content: activeThread.pdfFile.name,
@@ -216,54 +239,68 @@ export function AIAssistant({ className }: { className?: string }) {
 
     if (newMessages.length === 0) return
 
-    updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
-    updateThread(activeThread.id, { isLoading: true })
-    updateThread(activeThread.id, { currentResponse: "" })
+    // Update UI optimistically
+    const updatedMessages = [...activeThread.messages, ...newMessages]
+    updateThread(activeThread.id, { 
+      messages: updatedMessages,
+      isLoading: true,
+      currentResponse: "" 
+    })
 
     try {
-      // Save the user message to the database
-      await fetch(`/api/chats/${activeThread.id}/messages`, {
+      // First, save the user messages
+      const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages })
-      })
+      });
 
+      if (!userResponse.ok) {
+        throw new Error('Failed to save user messages');
+      }
+
+      // Then start streaming and wait for completion
       let fullResponse = ""
-      await streamChat([...activeThread.messages, ...newMessages], (chunk) => {
+      await streamChat(updatedMessages, (chunk) => {
         fullResponse += chunk
         updateThread(activeThread.id, { currentResponse: fullResponse })
-      }, activeThread.pdfFile?.id)
+      }, activeThread.pdfFile?.id);
 
+      // After streaming is complete, save the assistant's message
       const assistantMessage: Message = { 
         role: "assistant", 
         content: fullResponse,
         type: "text"
       }
       
-      // Save the assistant's response to the database
-      await fetch(`/api/chats/${activeThread.id}/messages`, {
+      const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [assistantMessage] })
       })
 
-      updateThread(activeThread.id, { 
-        messages: [...activeThread.messages, ...newMessages, assistantMessage],
-        isLoading: false,
-        currentResponse: ""
-      })
-      
-      // Clear PDF file after processing
-      if (activeThread.pdfFile?.previewUrl) {
-        URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
+      if (!assistantResponse.ok) {
+        throw new Error('Failed to save assistant message');
       }
-      updateThread(activeThread.id, { pdfFile: null })
+
+      // Update UI with the final state
+      updateThread(activeThread.id, { 
+        messages: [...updatedMessages, assistantMessage],
+        currentResponse: "",
+        isLoading: false,
+        pdfFile: null // Clear the PDF after processing
+      })
     } catch (error) {
-      console.error("Chat error:", error)
       toast({
         title: "Error",
-        description: "Failed to process your request. Please try again.",
+        description: "Failed to process your message. Please try again.",
         variant: "destructive",
+      })
+      // Revert the thread state on error
+      updateThread(activeThread.id, { 
+        messages: activeThread.messages,
+        currentResponse: "",
+        isLoading: false
       })
     }
   }
@@ -372,11 +409,11 @@ export function AIAssistant({ className }: { className?: string }) {
               </div>
             ) : !activeThread ? (
               <p className="text-[13px] text-gray-600">
-                Creating new chat...
+                No chat selected
               </p>
             ) : activeThread.messages.length === 0 ? (
               <p className="text-[13px] text-gray-600">
-                No chat history yet. Ask a question or upload a PDF to get started.
+                Ask a question or upload a PDF to get started.
               </p>
             ) : (
               <div className="space-y-4">
@@ -449,82 +486,75 @@ export function AIAssistant({ className }: { className?: string }) {
 
                 // If we have a PDF loaded, always use PDF flow regardless of search toggle
                 if (activeThread.pdfFile) {
-                  // Only add one message for PDF questions
-                  const newMessages: Message[] = [
-                    { role: "user", content: value || "Please analyze this PDF.", type: "text" },
-                    { role: "user", content: activeThread.pdfFile.name, type: "file", fileDetails: { 
-                      name: activeThread.pdfFile.name, 
-                      url: activeThread.pdfFile.previewUrl || '', 
-                      contentType: 'application/pdf' 
-                    }}
-                  ]
-                  
-                  updateThread(activeThread.id, { messages: [...activeThread.messages, ...newMessages] })
-                  updateThread(activeThread.id, { isLoading: true })
-                  updateThread(activeThread.id, { currentResponse: "" })
-
-                  try {
-                    let fullResponse = ""
-                    await streamChat(
-                      [...activeThread.messages, ...newMessages],
-                      (chunk) => {
-                        fullResponse += chunk
-                        updateThread(activeThread.id, { currentResponse: fullResponse })
-                      },
-                      activeThread.pdfFile.id
-                    )
-
-                    updateThread(activeThread.id, { 
-                      messages: [...activeThread.messages, ...newMessages, { role: "assistant", content: fullResponse }],
-                      isLoading: false,
-                      currentResponse: ""
-                    })
-                    // Clear PDF file after processing
-                    if (activeThread.pdfFile.previewUrl) {
-                      URL.revokeObjectURL(activeThread.pdfFile.previewUrl)
-                    }
-                    updateThread(activeThread.id, { pdfFile: null })
-                  } catch (error) {
-                    console.error("Chat error:", error)
-                    toast({
-                      title: "Error",
-                      description: "Failed to process your request. Please try again.",
-                      variant: "destructive",
-                    })
-                  }
+                  await handleSubmit(value)
                   return
                 }
                 
                 // Otherwise handle normal search/chat
                 if (withSearch) {
-                  updateThread(activeThread.id, { isLoading: true })
-                  updateThread(activeThread.id, { currentResponse: "" })
                   const userMessage: Message = { role: "user", content: `Search: ${value}`, type: "text" }
-                  updateThread(activeThread.id, { messages: [...activeThread.messages, userMessage] })
+                  
+                  // Update UI optimistically
+                  const updatedMessages = [...activeThread.messages, userMessage]
+                  updateThread(activeThread.id, { 
+                    messages: updatedMessages,
+                    isLoading: true,
+                    currentResponse: "" 
+                  })
 
                   try {
+                    // First save the user message
+                    const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ messages: [userMessage] })
+                    });
+
+                    if (!userResponse.ok) {
+                      throw new Error('Failed to save user message');
+                    }
+
+                    // Then perform the search
                     let fullResponse = ""
                     await performSearchGrounding(value, (chunk) => {
                       fullResponse += chunk
                       updateThread(activeThread.id, { currentResponse: fullResponse })
                     })
                     
+                    // After search is complete, save the assistant's message
                     const assistantMessage: Message = { 
                       role: "assistant", 
                       content: fullResponse,
                       type: "text"
                     }
+
+                    const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ messages: [assistantMessage] })
+                    })
+
+                    if (!assistantResponse.ok) {
+                      throw new Error('Failed to save assistant message');
+                    }
+
+                    // Update UI with final state
                     updateThread(activeThread.id, { 
-                      messages: [...activeThread.messages, userMessage, assistantMessage],
+                      messages: [...updatedMessages, assistantMessage],
                       isLoading: false,
                       currentResponse: ""
                     })
                   } catch (error) {
-                    console.error("Search grounding error:", error)
                     toast({
                       title: "Error",
-                      description: "Failed to perform search grounding. Please try again.",
+                      description: "Failed to perform search. Please try again.",
                       variant: "destructive",
+                    })
+                    // Revert thread state on error
+                    updateThread(activeThread.id, { 
+                      messages: activeThread.messages,
+                      isLoading: false,
+                      currentResponse: ""
                     })
                   }
                 } else {

@@ -22,10 +22,12 @@ model Chat {
 }
 
 model Message {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  content   String   @db.Text
-  role      String   // 'user' or 'assistant'
-  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  chatId    String
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  content     String   @db.Text
+  role        String   // 'user' or 'assistant'
+  type        String   @default("text") // 'text' or 'file'
+  fileDetails String?  @db.Text // JSON string for file metadata
+  chat        Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId      String
 }

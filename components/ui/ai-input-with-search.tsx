@@ -34,7 +34,7 @@ export function AIInputWithSearch({
     minHeight,
     maxHeight,
   });
-  const [showSearch, setShowSearch] = useState(true);
+  const [showSearch, setShowSearch] = useState(false);
   const [selectedFile, setSelectedFile] = useState<{ file: File, url: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
