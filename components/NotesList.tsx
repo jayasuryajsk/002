@@ -25,20 +25,30 @@ export function NotesList({ conversationId }: NotesListProps) {
     }
   }
 
-  // Initial fetch when conversationId changes
+  // Subscribe to note updates
   useEffect(() => {
     if (!conversationId) return
     setLoading(true)
     
+    // Initial fetch
     fetchNotes().finally(() => setLoading(false))
-  }, [conversationId])
 
-  // Poll for updates every 2 seconds
-  useEffect(() => {
-    if (!conversationId) return
+    // Set up event source for real-time updates
+    const eventSource = new EventSource(`/api/notes/${conversationId}/subscribe`)
+    
+    eventSource.onmessage = (event) => {
+      const newNote = JSON.parse(event.data)
+      setNotes(prev => [newNote, ...prev])
+    }
 
-    const interval = setInterval(fetchNotes, 2000)
-    return () => clearInterval(interval)
+    eventSource.onerror = (error) => {
+      console.error('EventSource failed:', error)
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.close()
+    }
   }, [conversationId])
 
   return (

@@ -2,6 +2,7 @@ import type { Message } from ".prisma/client"
 import { NoteTakingAgent } from "./agents/note-taking-agent"
 import { prisma } from "./prisma"
 import { v4 as uuidv4 } from "uuid"
+import { emitEvent } from "./events"
 
 export async function generateNoteFromMessage(message: Message) {
   try {
@@ -38,6 +39,16 @@ export async function generateNoteFromMessage(message: Message) {
       }
     });
     console.log('Note created successfully:', note.id);
+
+    // Emit event for real-time updates
+    emitEvent('note.created', {
+      id: note.id,
+      content: note.content,
+      timestamp: note.createdAt.toISOString(),
+      category: note.category,
+      tags: note.tags,
+      conversationId: note.conversationId
+    });
 
   } catch (error) {
     // Log error but don't throw - we don't want to interrupt the chat flow
