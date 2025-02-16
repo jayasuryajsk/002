@@ -32,7 +32,12 @@ type ChatThread = {
   pdfFile: { id: string; name: string; previewUrl?: string } | null
 }
 
-export function AIAssistant({ className }: { className?: string }) {
+interface AIAssistantProps {
+  className?: string;
+  onChatChange?: (chatId: string | null) => void;
+}
+
+export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -337,6 +342,11 @@ export function AIAssistant({ className }: { className?: string }) {
       document.removeEventListener('mouseup', stopResizing)
     }
   }, [resize, stopResizing])
+
+  // Update the parent component when active thread changes
+  useEffect(() => {
+    onChatChange?.(activeThreadId)
+  }, [activeThreadId, onChatChange])
 
   return (
     <div 

@@ -16,6 +16,7 @@ export default function TenderWriterApp() {
   const [tenderTitle, setTenderTitle] = useState("")
   const [tenderContent, setTenderContent] = useState("")
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const router = useRouter()
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed)
@@ -73,7 +74,7 @@ export default function TenderWriterApp() {
                 </TabsList>
               </Tabs>
             </div>
-            <NotesList />
+            <NotesList conversationId={activeThreadId || undefined} />
           </div>
         </div>
 
@@ -93,7 +94,7 @@ export default function TenderWriterApp() {
         </div>
 
         {/* Right Sidebar - AI Assistant */}
-        <AIAssistant className="w-[400px] shadow-sm" />
+        <AIAssistant onChatChange={setActiveThreadId} />
       </div>
     </div>
   )

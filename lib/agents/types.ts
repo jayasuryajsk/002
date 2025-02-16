@@ -1,4 +1,4 @@
-export type AgentRole = "researcher" | "writer" | "compliance" | "reviewer" | "cost"
+export type AgentRole = "researcher" | "writer" | "compliance" | "reviewer" | "cost" | "note-taking"
 
 export interface AgentMessage {
   role: AgentRole
