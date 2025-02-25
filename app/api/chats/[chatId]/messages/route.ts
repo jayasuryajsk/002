@@ -85,4 +85,42 @@ export async function POST(
       { status: 500 }
     );
   }
-} 
+}
+
+export async function GET(
+  req: Request,
+  { params }: { params: { chatId: string } }
+) {
+  try {
+    const url = new URL(req.url);
+    const limit = parseInt(url.searchParams.get("limit") || "20", 10);
+    const beforeStr = url.searchParams.get("before");
+    
+    let whereClause: any = { chatId: params.chatId };
+    if (beforeStr) {
+      const beforeDate = new Date(beforeStr);
+      whereClause.createdAt = { lt: beforeDate };
+    }
+    
+    // Fetch messages in descending order, get limit+1 to check for more
+    const messages = await prisma.message.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1
+    });
+    
+    let hasMore = false;
+    if (messages.length > limit) {
+      hasMore = true;
+      messages.pop();
+    }
+    
+    // Reverse to ascending order
+    messages.reverse();
+    
+    return NextResponse.json({ messages, hasMore });
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 });
+  }
+}

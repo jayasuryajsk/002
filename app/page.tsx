@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,9 @@ import { NotesList } from "@/components/NotesList"
 import { AIAssistant } from "@/components/AIAssistant"
 import { SidebarToggle } from "@/components/SidebarToggle"
 import { useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { TipTapEditor } from "@/components/TipTapEditor"
+import { Sources } from "@/components/Sources"
 
 export default function TenderWriterApp() {
   const [tenderTitle, setTenderTitle] = useState("")
@@ -18,6 +20,14 @@ export default function TenderWriterApp() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const chatId = searchParams.get('chatId')
+    if (chatId) {
+      setActiveThreadId(chatId)
+    }
+  }, [searchParams])
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed)
 
@@ -42,7 +52,12 @@ export default function TenderWriterApp() {
           <div className="flex items-center gap-4">
             <TenderMetadata />
 
-            <Button variant="ghost" size="sm" className="text-gray-500 hover:bg-gray-100 hover:text-gray-700">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              onClick={() => router.push("/settings")}
+            >
               Settings
             </Button>
           </div>
@@ -79,14 +94,7 @@ export default function TenderWriterApp() {
               </TabsContent>
 
               <TabsContent value="sources" className="flex-1 overflow-auto">
-                <div className="p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[13px] font-medium text-gray-700">Sources</span>
-                  </div>
-                  <div className="text-[13px] text-gray-600 leading-5 bg-gray-50 p-3 rounded-md border border-gray-100">
-                    No sources added yet. Add source documents to reference in your tender.
-                  </div>
-                </div>
+                <Sources />
               </TabsContent>
 
               <TabsContent value="sections" className="flex-1 overflow-auto">
@@ -124,4 +132,3 @@ export default function TenderWriterApp() {
     </div>
   )
 }
-

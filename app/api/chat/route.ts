@@ -1,9 +1,10 @@
 import { Message } from 'ai'
-import { google } from "@ai-sdk/google"
-import { streamText, createDataStreamResponse, smoothStream } from 'ai'
+import { GoogleGenerativeAI } from "@google/generative-ai"
 import { NextResponse } from "next/server"
 
 export const runtime = "edge"
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "")
 
 export async function POST(req: Request) {
   try {
@@ -22,27 +23,39 @@ export async function POST(req: Request) {
       ]
     }
 
-    // Build a new messages array that replaces the last message with our combined content
-    const newMessages = [
-      ...messages.slice(0, -1),
-      { role: "user", content }
-    ]
+    // Create a streaming response
+    const stream = new ReadableStream({
+      async start(controller) {
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-001" })
+        
+        try {
+          const result = await model.generateContentStream([
+            { text: content.toString() }
+          ])
 
-    // Return a streaming response using the native streaming helpers
-    return createDataStreamResponse({
-      execute: (dataStream) => {
-        const result = streamText({
-          model: google("gemini-2.0-flash-001"),
-          messages: newMessages,
-          experimental_transform: smoothStream({ chunking: 'word' })
-        })
-
-        // Merge the streaming result into the provided dataStream to force flush each chunk
-        result.mergeIntoDataStream(dataStream)
-      },
-      onError: () => {
-        return 'Oops, an error occurred while streaming.'
+          const encoder = new TextEncoder()
+          
+          for await (const chunk of result.stream) {
+            const text = chunk.text()
+            // Format as SSE
+            const data = `data: ${JSON.stringify(text)}\n\n`
+            controller.enqueue(encoder.encode(data))
+          }
+          // Send end marker
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        } catch (error) {
+          controller.error(error)
+        }
       }
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     })
   } catch (error) {
     console.error("Error in chat:", error)

@@ -31,10 +31,30 @@ export default function NewProject() {
 
     setIsLoading(true)
     try {
-      // Implement project creation logic here
-      router.push("/tender")
+      const formData = new FormData();
+      formData.append('name', projectName);
+      
+      if (files) {
+        Array.from(files).forEach(file => {
+          formData.append('files', file);
+        });
+      }
+
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create project');
+      }
+
+      // Redirect to the project workspace
+      router.push(`/project/${data.projectId}`);
     } catch (err) {
-      setError("Failed to create project. Please try again.")
+      setError(err instanceof Error ? err.message : "Failed to create project. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -92,4 +112,3 @@ export default function NewProject() {
     </div>
   )
 }
-

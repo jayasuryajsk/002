@@ -75,12 +75,12 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         
         setThreads(formattedChats)
         
-        // If we have chats, set the first one as active, otherwise create a new one
+        // If we have chats, set the first one as active
         if (formattedChats.length > 0) {
           setActiveThreadId(formattedChats[0].id)
-        } else {
-          // No existing chats, create a new one
-          await createNewThread()
+          if (onChatChange) {
+            onChatChange(formattedChats[0].id)
+          }
         }
       } catch (error) {
         console.error('Error loading chats:', error)
@@ -89,8 +89,6 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
           description: "Failed to load chat history.",
           variant: "destructive",
         })
-        // Create a new thread if loading fails
-        await createNewThread()
       } finally {
         setIsLoading(false)
       }
@@ -99,32 +97,24 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
   }, [])
 
   const createNewThread = async () => {
+    if (isLoading) return; // Prevent multiple simultaneous creations
+    
+    setIsLoading(true);
     try {
-      // Create optimistic thread immediately
-      const optimisticThread: ChatThread = {
-        id: 'temp-' + Date.now(), // Temporary ID until we get the real one
-        title: 'New Chat',
-        messages: [],
-        currentResponse: '',
-        isLoading: false, // Changed to false to hide loading state
-        pdfFile: null
-      }
-      
-      // Update UI immediately
-      setThreads(prev => [...prev, optimisticThread])
-      setActiveThreadId(optimisticThread.id)
-
-      // Create the actual chat in the database
       const response = await fetch('/api/chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'New Chat' })
-      })
+      });
       
-      if (!response.ok) throw new Error('Failed to create chat')
-      const savedChat = await response.json()
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create chat');
+      }
       
-      // Replace optimistic thread with real one (keeping same visual state)
+      const savedChat = await response.json();
+      
+      // Only create the thread in state after successful API call
       const newThread: ChatThread = {
         id: savedChat.id,
         title: 'New Chat',
@@ -132,23 +122,115 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         currentResponse: '',
         isLoading: false,
         pdfFile: null
-      }
+      };
       
-      setThreads(prev => prev.map(thread => 
-        thread.id === optimisticThread.id ? newThread : thread
-      ))
-      setActiveThreadId(newThread.id)
+      setThreads(prev => [...prev, newThread]);
+      setActiveThreadId(newThread.id);
+      
+      // Notify parent component if callback exists
+      if (onChatChange) {
+        onChatChange(newThread.id);
+      }
+
+      return newThread.id;
     } catch (error) {
-      console.error('Error creating chat:', error)
+      console.error('Error creating chat:', error);
       toast({
         title: "Error",
-        description: "Failed to create new chat.",
+        description: error instanceof Error ? error.message : "Failed to create new chat. Please try again.",
         variant: "destructive",
-      })
-      // Remove the optimistic thread if creation failed
-      setThreads(prev => prev.filter(thread => !thread.id.startsWith('temp-')))
+      });
+      return null;
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
+
+  // New function to handle sending messages with a check for temporary chat thread
+  const sendMessage = async (content: string) => {
+    if (activeThread && activeThread.id.startsWith("temp-")) {
+      toast({
+        title: "Please wait",
+        description: "Chat is still being created. Please wait before sending messages.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      const response = await fetch('/api/messages', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+           content,
+           role: "user",
+           chatId: activeThread.id
+        })
+      });
+      if (!response.ok) throw new Error("Failed to send message");
+      const message = await response.json();
+      // Update the active thread's messages
+      updateThread(activeThread.id, { messages: [...activeThread.messages, message] });
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process message. Try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // New function to handle deleting a chat thread
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      const response = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Failed to delete chat");
+      setThreads(prev => prev.filter(thread => thread.id !== chatId));
+      if (activeThread?.id === chatId) {
+        const remaining = threads.filter(thread => thread.id !== chatId);
+        if (remaining.length > 0) {
+          setActiveThreadId(remaining[0].id);
+        } else {
+          await createNewThread();
+        }
+      }
+      toast({
+        title: "Chat deleted",
+        description: "Chat thread has been deleted successfully."
+      });
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete chat.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteAllChats = async () => {
+    if (!threads.length) return;
+    
+    try {
+      const response = await fetch('/api/chats/delete-all', { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete all chats');
+      
+      setThreads([]);
+      await createNewThread();
+      
+      toast({
+        title: "All chats deleted",
+        description: "All chat threads have been deleted successfully."
+      });
+    } catch (error) {
+      console.error('Error deleting all chats:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete all chats.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const updateThread = (threadId: string, updates: Partial<ChatThread>) => {
     setThreads(prev => prev.map(thread => 
@@ -214,6 +296,39 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
   const handleSubmit = async (text: string) => {
     if (!activeThread || activeThread.isLoading) return
 
+    const thread = activeThread; // Create a stable reference that TypeScript can track
+
+    // Ensure chat exists before proceeding
+    try {
+      const chatResponse = await fetch(`/api/chats/${thread.id}`, {
+        method: 'GET'
+      });
+      
+      if (!chatResponse.ok) {
+        // If chat doesn't exist, create it first
+        const createResponse = await fetch('/api/chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'New Chat' })
+        });
+        
+        if (!createResponse.ok) {
+          throw new Error('Failed to create chat');
+        }
+        
+        const savedChat = await createResponse.json();
+        thread.id = savedChat.id;
+      }
+    } catch (error) {
+      console.error('Error verifying chat:', error);
+      toast({
+        title: "Error",
+        description: "Failed to verify chat exists. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const newMessages: Message[] = []
 
     // If there's input, add it as a message bubble
@@ -222,7 +337,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
     }
 
     // If there's a PDF, add it as a separate bubble with preview
-    if (activeThread.pdfFile) {
+    if (thread.pdfFile) {
       if (!text.trim()) {
         newMessages.push({ 
           role: "user", 
@@ -232,11 +347,11 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
       }
       newMessages.push({ 
         role: "user", 
-        content: activeThread.pdfFile.name,
+        content: thread.pdfFile.name,
         type: "file",
         fileDetails: {
-          name: activeThread.pdfFile.name,
-          url: activeThread.pdfFile.previewUrl || '',
+          name: thread.pdfFile.name,
+          url: thread.pdfFile.previewUrl || '',
           contentType: 'application/pdf'
         }
       })
@@ -245,8 +360,8 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
     if (newMessages.length === 0) return
 
     // Update UI optimistically
-    const updatedMessages = [...activeThread.messages, ...newMessages]
-    updateThread(activeThread.id, { 
+    const updatedMessages = [...thread.messages, ...newMessages]
+    updateThread(thread.id, { 
       messages: updatedMessages,
       isLoading: true,
       currentResponse: "" 
@@ -254,7 +369,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
 
     try {
       // First, save the user messages
-      const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+      const userResponse = await fetch(`/api/chats/${thread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages })
@@ -268,8 +383,8 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
       let fullResponse = ""
       await streamChat(updatedMessages, (chunk) => {
         fullResponse += chunk
-        updateThread(activeThread.id, { currentResponse: fullResponse })
-      }, activeThread.pdfFile?.id);
+        updateThread(thread.id, { currentResponse: fullResponse })
+      }, thread.pdfFile?.id);
 
       // After streaming is complete, save the assistant's message
       const assistantMessage: Message = { 
@@ -278,7 +393,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         type: "text"
       }
       
-      const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+      const assistantResponse = await fetch(`/api/chats/${thread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [assistantMessage] })
@@ -289,7 +404,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
       }
 
       // Update UI with the final state
-      updateThread(activeThread.id, { 
+      updateThread(thread.id, { 
         messages: [...updatedMessages, assistantMessage],
         currentResponse: "",
         isLoading: false,
@@ -302,8 +417,8 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         variant: "destructive",
       })
       // Revert the thread state on error
-      updateThread(activeThread.id, { 
-        messages: activeThread.messages,
+      updateThread(thread.id, { 
+        messages: thread.messages,
         currentResponse: "",
         isLoading: false
       })
@@ -369,6 +484,15 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
             >
               <Plus className="h-4 w-4" />
             </Button>
+            {threads.length > 0 && (
+              <Button
+                variant="ghost"
+                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                onClick={deleteAllChats}
+              >
+                Delete All
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
@@ -395,7 +519,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
                         className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => {
                           e.stopPropagation()
-                          deleteThread(thread.id)
+                          handleDeleteChat(thread.id)
                         }}
                       >
                         <X className="h-3 w-3" />
@@ -622,4 +746,3 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
     </div>
   )
 }
-

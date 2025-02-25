@@ -27,3 +27,17 @@ export interface TenderDocument {
   }
 }
 
+export interface SourceDocument {
+  id: string
+  title: string
+  content: string
+  binaryData?: Uint8Array | null
+  type: "requirements" | "specifications" | "addendum" | "other"
+  metadata?: {
+    dateAdded: string
+    fileType: string
+    fileSize: number
+    path: string
+  }
+}
+

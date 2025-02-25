@@ -1,30 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import type { Message } from '@/lib/chat';
-
-type ChatWithMessages = {
-  id: string;
-  title: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  messages: Array<{
-    id: string;
-    content: string;
-    role: string;
-    type: string;
-    fileDetails: string | null;
-    createdAt: Date;
-    chatId: string;
-  }>;
-};
 
 export async function POST(req: Request) {
   try {
-    const { title } = await req.json();
-    
     const chat = await prisma.chat.create({
       data: {
-        title
+        title: 'New Chat'
       },
       include: {
         messages: true
@@ -33,8 +14,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(chat);
   } catch (error) {
+    console.error('Chat creation error:', error);
     return NextResponse.json(
-      { error: 'Failed to create chat' },
+      { error: 'Failed to create chat. Please try again.' },
       { status: 500 }
     );
   }
@@ -51,7 +33,7 @@ export async function GET() {
         }
       },
       orderBy: {
-        createdAt: 'asc'
+        createdAt: 'desc'
       }
     });
     
