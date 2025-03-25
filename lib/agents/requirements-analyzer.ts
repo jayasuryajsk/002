@@ -49,7 +49,7 @@ export class RequirementsAnalyzer {
   }
 
   async analyzeRequirements(): Promise<string> {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" })
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-001" })
 
     let requirements = ""
     
@@ -108,7 +108,7 @@ export class RequirementsAnalyzer {
       return "No company documents available for analysis."
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" })
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-001" })
     
     let companyCapabilities = ""
     

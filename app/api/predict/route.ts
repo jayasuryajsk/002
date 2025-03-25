@@ -3,8 +3,13 @@ import { OpenRouter } from '@openrouter/ai-sdk-provider'
 export async function POST(req: Request) {
   try {
     const { text } = await req.json()
-    console.log('Received text for prediction:', text)
-
+    console.log('Prediction disabled: Received text for prediction:', text)
+    
+    // Always return empty string to disable auto-complete functionality
+    return Response.json('')
+    
+    // Original code commented out
+    /*
     // Don't make API call for very short text
     if (text.length < 3) {
       console.log('Text too short, skipping prediction')
@@ -67,6 +72,7 @@ export async function POST(req: Request) {
       console.error('Error parsing API response:', parseError)
       return Response.json('')
     }
+    */
   } catch (error) {
     console.error('Error in prediction:', error)
     return Response.json('')

@@ -1,85 +1,175 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { SourceDocument } from '@/lib/agents/types'
+import { LocalDocumentStorage } from '@/lib/local-storage'
 
-// In-memory storage for demo purposes
-// In production, this should use a proper database
-declare global {
-  var sourceDocuments: SourceDocument[]
-}
+// In-memory storage for documents (initially empty, populated from storage)
+let sourceDocuments: SourceDocument[] = []
 
-// Initialize global storage if it doesn't exist
-if (!global.sourceDocuments) {
-  global.sourceDocuments = []
-  console.log('Initialized empty sourceDocuments array')
-} else {
-  console.log(`Found existing sourceDocuments array with ${global.sourceDocuments.length} documents`)
-}
-
-export async function GET() {
-  console.log(`GET /api/tender/sources - Returning ${global.sourceDocuments.length} documents`)
-  return Response.json(global.sourceDocuments)
-}
-
-export async function POST(req: NextRequest) {
+// Load documents from persistent storage
+async function loadDocumentsFromStorage() {
   try {
-    const formData = await req.formData()
+    console.log('Loading source documents from local storage...')
+    sourceDocuments = await LocalDocumentStorage.getSourceDocuments()
+    console.log(`Loaded ${sourceDocuments.length} source documents`)
+    return sourceDocuments
+  } catch (error) {
+    console.error('Error loading source documents:', error)
+    return []
+  }
+}
+
+export async function GET(request: NextRequest) {
+  console.log('Sources API: GET request received')
+  
+  try {
+    // Always refresh from storage to catch deleted files
+    console.log('Loading source documents from storage...')
+    const documents = await loadDocumentsFromStorage()
+    
+    // Update in-memory cache
+    sourceDocuments = documents
+    
+    console.log(`Returning ${documents.length} source documents`)
+    if (documents.length > 0) {
+      console.log('Source document titles:', documents.map(doc => doc.title).join(', '))
+    }
+    
+    return NextResponse.json(documents)
+  } catch (error) {
+    console.error('Error in GET source documents:', error)
+    return NextResponse.json(
+      { error: 'Failed to retrieve source documents' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  console.log('Sources API: POST request received')
+  
+  try {
+    // Ensure documents are loaded
+    await loadDocumentsFromStorage()
+    
+    const formData = await request.formData()
     const file = formData.get('file') as File
     
     if (!file) {
-      console.error('POST /api/tender/sources - No file uploaded')
-      return new Response('No file uploaded', { status: 400 })
+      return NextResponse.json(
+        { error: 'No file provided' },
+        { status: 400 }
+      )
     }
-
-    // Store binary data for PDFs, text for other files
-    let content: string | Uint8Array;
-    let binaryData: Uint8Array | null = null;
     
-    if (file.type === 'application/pdf') {
-      const bytes = await file.arrayBuffer();
-      binaryData = new Uint8Array(bytes);
-      content = "PDF document - binary content stored separately";
+    console.log(`Processing uploaded file: ${file.name} (${file.type}, ${file.size} bytes)`)
+    
+    // Generate a unique ID for the document
+    const docId = uuidv4()
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    const isImage = file.type.startsWith('image/')
+    
+    // Convert file to buffer for storage
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    // Create the document object
+    let content: string = ""
+    
+    // For PDF and images, we'll store the binary data
+    if (isPdf || isImage) {
+      content = `Binary content stored separately`
     } else {
-      content = await file.text();
+      // For text files, we can read the content
+      try {
+        content = await file.text()
+      } catch (e) {
+        console.error(`Error reading file text:`, e)
+        content = `Content could not be read`
+      }
     }
-
-    const sourceDoc: SourceDocument = {
-      id: uuidv4(),
+    
+    const newDocument: SourceDocument = {
+      id: docId,
       title: file.name,
-      content,
-      binaryData,
+      content: content,
+      binaryData: isPdf || isImage ? new Uint8Array(arrayBuffer) : null,
       type: 'requirements',
       metadata: {
         dateAdded: new Date().toISOString(),
-        fileType: file.type,
+        fileType: file.type || (isPdf ? 'application/pdf' : 'text/plain'),
         fileSize: file.size,
         path: file.name
       }
     }
-
-    global.sourceDocuments.push(sourceDoc)
-    console.log(`Added source document: ${file.name} (${file.size} bytes), total: ${global.sourceDocuments.length}`)
     
-    // Log all document titles for debugging
-    console.log('Current source documents:')
-    global.sourceDocuments.forEach((doc, index) => {
-      console.log(`  ${index + 1}. ${doc.title} (${doc.metadata?.fileSize || 0} bytes)`)
-    })
+    // Store in local storage
+    await LocalDocumentStorage.storeSourceDocument(newDocument)
+    console.log('Document stored in local storage')
     
-    return Response.json(sourceDoc)
-
+    // Add to in-memory array
+    sourceDocuments.push(newDocument)
+    
+    // Log all current source documents for debugging
+    console.log(`Current source documents (${sourceDocuments.length}):`, 
+      sourceDocuments.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        type: doc.type
+      }))
+    )
+    
+    return NextResponse.json(newDocument)
   } catch (error) {
-    console.error('Error processing source document:', error)
-    return new Response('Error processing document', { status: 500 })
+    console.error('Error in POST source document:', error)
+    return NextResponse.json(
+      { error: 'Failed to process source document', details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    )
   }
 }
 
-export async function DELETE(req: NextRequest) {
-  const { id } = await req.json()
+export async function DELETE(request: NextRequest) {
+  console.log('Sources API: DELETE request received')
   
-  const initialLength = global.sourceDocuments.length
-  global.sourceDocuments = global.sourceDocuments.filter(doc => doc.id !== id)
-  
-  console.log(`Deleted source document, remaining: ${global.sourceDocuments.length}`)
-  return new Response(null, { status: 204 })
-} 
+  try {
+    // Ensure documents are loaded
+    await loadDocumentsFromStorage()
+    
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'No document ID provided' },
+        { status: 400 }
+      )
+    }
+    
+    // Find the document to get its title
+    const document = sourceDocuments.find(doc => doc.id === id)
+    if (!document) {
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 }
+      )
+    }
+    
+    console.log(`Deleting source document: ${id} (${document.title})`)
+    
+    // Delete from local storage
+    await LocalDocumentStorage.deleteSourceDocument(id)
+    console.log('Successfully deleted document from local storage')
+    
+    // Remove from in-memory array
+    sourceDocuments = sourceDocuments.filter(doc => doc.id !== id)
+    
+    return NextResponse.json({ success: true, id })
+  } catch (error) {
+    console.error('Error in DELETE source document:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete source document' },
+      { status: 500 }
+    )
+  }
+}

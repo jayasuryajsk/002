@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Plus, History, MoreHorizontal, Globe, ArrowUp, Clock, Paperclip, X } from "lucide-react"
+import { Plus, History, MoreHorizontal, Globe, ArrowUp, Clock, Paperclip, X, ChevronDown, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +22,7 @@ import { AIInputWithSearch } from "@/components/ui/ai-input-with-search"
 import { PreviewAttachment } from "@/components/ui/PreviewAttachment"
 import { v4 as uuidv4 } from 'uuid'
 import { cn } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
 
 type ChatThread = {
   id: string
@@ -35,20 +36,68 @@ type ChatThread = {
 interface AIAssistantProps {
   className?: string;
   onChatChange?: (chatId: string | null) => void;
+  onAddToChat?: (selectedText: string) => void;
+  selectedText?: string;
+  onApplyEdit?: (text: string, selectionInfo: any) => void;
 }
 
-export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
-  const [threads, setThreads] = useState<ChatThread[]>([])
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { toast } = useToast()
-  const [width, setWidth] = useState(400)
+// Custom hook for resizable panel
+const useResizablePanel = (initialWidth = 400) => {
+  const [width, setWidth] = useState(initialWidth)
   const isResizing = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
-  const [isLoading, setIsLoading] = useState(true)
 
-  const activeThread = activeThreadId ? threads.find(t => t.id === activeThreadId) : null
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    isResizing.current = true
+    startX.current = e.pageX
+    startWidth.current = width
+    document.body.style.cursor = 'ew-resize'
+    document.body.style.userSelect = 'none'
+  }, [width])
+
+  const stopResizing = useCallback(() => {
+    isResizing.current = false
+    document.body.style.cursor = 'default'
+    document.body.style.userSelect = 'auto'
+  }, [])
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (!isResizing.current) return
+
+    const newWidth = startWidth.current - (e.pageX - startX.current)
+    // Set min and max width limits
+    if (newWidth > 300 && newWidth < 800) {
+      setWidth(newWidth)
+    }
+  }, [])
+
+  useEffect(() => {
+    document.addEventListener('mousemove', resize)
+    document.addEventListener('mouseup', stopResizing)
+    return () => {
+      document.removeEventListener('mousemove', resize)
+      document.removeEventListener('mouseup', stopResizing)
+    }
+  }, [resize, stopResizing])
+
+  return { width, startResizing }
+}
+
+// Custom hook for chat thread management
+const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
+  const [threads, setThreads] = useState<ChatThread[]>([])
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+
+  const activeThread = useMemo(() => 
+    activeThreadId ? threads.find(t => t.id === activeThreadId) : null
+  , [activeThreadId, threads])
+
+  useEffect(() => {
+    onChatChange?.(activeThreadId)
+  }, [activeThreadId, onChatChange])
 
   // Load chats from database on mount
   useEffect(() => {
@@ -96,8 +145,8 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
     loadChats()
   }, [])
 
-  const createNewThread = async () => {
-    if (isLoading) return; // Prevent multiple simultaneous creations
+  const createNewThread = useCallback(async () => {
+    if (isLoading) return null; // Prevent multiple simultaneous creations
     
     setIsLoading(true);
     try {
@@ -144,103 +193,17 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoading, onChatChange, toast]);
 
-  // New function to handle sending messages with a check for temporary chat thread
-  const sendMessage = async (content: string) => {
-    if (activeThread && activeThread.id.startsWith("temp-")) {
-      toast({
-        title: "Please wait",
-        description: "Chat is still being created. Please wait before sending messages.",
-        variant: "destructive"
-      });
-      return;
-    }
-    try {
-      const response = await fetch('/api/messages', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-           content,
-           role: "user",
-           chatId: activeThread.id
-        })
-      });
-      if (!response.ok) throw new Error("Failed to send message");
-      const message = await response.json();
-      // Update the active thread's messages
-      updateThread(activeThread.id, { messages: [...activeThread.messages, message] });
-    } catch (error) {
-      console.error("Error sending message:", error);
-      toast({
-        title: "Error",
-        description: "Failed to process message. Try again.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  // New function to handle deleting a chat thread
-  const handleDeleteChat = async (chatId: string) => {
-    try {
-      const response = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Failed to delete chat");
-      setThreads(prev => prev.filter(thread => thread.id !== chatId));
-      if (activeThread?.id === chatId) {
-        const remaining = threads.filter(thread => thread.id !== chatId);
-        if (remaining.length > 0) {
-          setActiveThreadId(remaining[0].id);
-        } else {
-          await createNewThread();
-        }
-      }
-      toast({
-        title: "Chat deleted",
-        description: "Chat thread has been deleted successfully."
-      });
-    } catch (error) {
-      console.error("Error deleting chat:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete chat.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const deleteAllChats = async () => {
-    if (!threads.length) return;
-    
-    try {
-      const response = await fetch('/api/chats/delete-all', { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete all chats');
-      
-      setThreads([]);
-      await createNewThread();
-      
-      toast({
-        title: "All chats deleted",
-        description: "All chat threads have been deleted successfully."
-      });
-    } catch (error) {
-      console.error('Error deleting all chats:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete all chats.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const updateThread = (threadId: string, updates: Partial<ChatThread>) => {
+  const updateThread = useCallback((threadId: string, updates: Partial<ChatThread>) => {
     setThreads(prev => prev.map(thread => 
       thread.id === threadId 
         ? { ...thread, ...updates }
         : thread
     ))
-  }
+  }, []);
 
-  const deleteThread = async (threadId: string) => {
+  const deleteThread = useCallback(async (threadId: string) => {
     try {
       const response = await fetch(`/api/chats/${threadId}`, {
         method: 'DELETE'
@@ -267,34 +230,352 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         variant: "destructive",
       });
     }
+  }, [activeThreadId, createNewThread, toast]);
+
+  const deleteAllChats = useCallback(async () => {
+    if (!threads.length) return;
+    
+    try {
+      const response = await fetch('/api/chats/delete-all', { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete all chats');
+      
+      setThreads([]);
+      createNewThread();
+      
+      toast({
+        title: "All chats deleted",
+        description: "All chat threads have been deleted successfully."
+      });
+    } catch (error) {
+      console.error('Error deleting all chats:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete all chats.",
+        variant: "destructive"
+      });
+    }
+  }, [threads.length, createNewThread, toast]);
+
+  return {
+    threads,
+    activeThread,
+    activeThreadId,
+    isLoading,
+    setActiveThreadId,
+    createNewThread,
+    updateThread,
+    deleteThread,
+    deleteAllChats
   }
+}
 
-  // Update thread title based on first message
-  useEffect(() => {
-    if (activeThread?.messages.length === 1 && activeThread.messages[0].role === 'user') {
-      const title = activeThread.messages[0].content.slice(0, 30) + (activeThread.messages[0].content.length > 30 ? '...' : '')
-      updateThread(activeThread.id, { title })
+// No need to detect direct replacement anymore, we always apply edits for responses to selected text
+
+// Component for rendering a single message
+const MessageItem = ({ 
+  message, 
+  onApplyEdit,
+  messageIndex,
+  messages
+}: { 
+  message: Message, 
+  onApplyEdit?: (text: string) => void,
+  messageIndex: number,
+  messages: Message[]
+}) => {
+  if (message.role === "user") {
+    if (message.type === "file") {
+      return (
+        <PreviewAttachment
+          attachment={{
+            name: message.fileDetails?.name || '',
+            url: message.fileDetails?.url || '',
+            contentType: message.fileDetails?.contentType
+          }}
+          isUploading={false}
+        />
+      );
     }
-  }, [activeThread?.messages])
-
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [])
-
-  // Add auto-scroll effect for streaming
-  useEffect(() => {
-    if (activeThread?.currentResponse) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    
+    // If this is a selected text message, show a special UI
+    if (message.type === "selected-text" && message.selectedText) {
+      return (
+        <div className="text-[13px] text-gray-700">
+          <div className="bg-blue-50 p-2 rounded-md mb-2 text-blue-700 text-xs">
+            <span className="font-medium">
+              {message.selectionInfo?.lines || "Selected text"}:
+            </span>
+            <div className="mt-1 p-2 bg-white rounded border border-blue-100 whitespace-pre-wrap text-gray-700 font-mono text-xs max-h-20 overflow-y-auto">
+              {message.selectedText}
+            </div>
+          </div>
+          {message.content}
+        </div>
+      );
     }
-  }, [activeThread?.currentResponse])
+    
+    return <div className="text-[13px] text-gray-700">{message.content}</div>;
+  }
+  
+  // For assistant messages, check if this is likely a response to selected text
+  const prevMessage = messageIndex > 0 ? messages[messageIndex - 1] : undefined;
+  const isEditSuggestion = message.role === "assistant" && prevMessage?.type === "selected-text";
 
-  // Keep existing scroll effect for new messages
+  // State to track pending edits that need approval
+  const [pendingEdit, setPendingEdit] = useState<string | null>(null);
+
+  // Find possible original text from previous message
+  const originalText = useMemo(() => {
+    return prevMessage?.selectedText || "";
+  }, [prevMessage]);
+
+  // Create edit suggestion for user approval - only run once when message is received
   useEffect(() => {
-    scrollToBottom()
-  }, [scrollToBottom, activeThread?.messages])
+    // Create a flag to prevent multiple processing
+    // @ts-ignore
+    if (isEditSuggestion && onApplyEdit && !message._processed) {
+      // Mark as processed to prevent infinite loop
+      // @ts-ignore
+      message._processed = true;
+      
+      let textToApply = message.content;
+            
+      // Remove wrapping quotes if present
+      if ((textToApply.startsWith('"') && textToApply.endsWith('"')) ||
+          (textToApply.startsWith("'") && textToApply.endsWith("'"))) {
+        textToApply = textToApply.substring(1, textToApply.length - 1);
+      }
+      
+      // Store the edit suggestion for approval
+      console.log("Storing edit for approval", textToApply);
+      setPendingEdit(textToApply);
+    }
+  }, [isEditSuggestion, message.id]); // Only depend on message.id to prevent infinite loops
+  
+  // Function to apply the pending edit
+  const applyPendingEdit = useCallback(() => {
+    if (pendingEdit && onApplyEdit) {
+      onApplyEdit(pendingEdit);
+      setPendingEdit(null); // Clear pending edit after application
+    }
+  }, [pendingEdit, onApplyEdit]);
 
-  const handleSubmit = async (text: string) => {
-    if (!activeThread || activeThread.isLoading) return
+  return (
+    <div className="w-full">
+      {pendingEdit ? (
+        <div className="w-full">
+          <div className="mb-3">
+            <ReactMarkdown className="text-[13px] text-gray-700">
+              {message.content}
+            </ReactMarkdown>
+          </div>
+
+          {/* Diff Preview */}
+          <div className="border rounded-md overflow-hidden mb-3 text-[13px]">
+            <div className="bg-gray-100 px-3 py-1 text-xs text-gray-600 font-medium border-b">
+              Changes Preview:
+            </div>
+            <div className="p-3 space-y-2">
+              <div className="bg-red-50 p-2 rounded-md border border-red-100">
+                <div className="font-mono text-red-700 text-xs line-through">{originalText}</div>
+              </div>
+              <div className="flex items-center justify-center">
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              </div>
+              <div className="bg-green-50 p-2 rounded-md border border-green-100">
+                <div className="font-mono text-green-700 text-xs">{pendingEdit}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-2">
+            <Button 
+              size="sm" 
+              variant="default" 
+              className="text-xs bg-green-500 hover:bg-green-600" 
+              onClick={applyPendingEdit}
+            >
+              Apply Changes
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="text-xs" 
+              onClick={() => setPendingEdit(null)}
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>pre]:max-w-full [&>pre]:whitespace-pre-wrap [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded [&>code]:break-words">
+          {message.content}
+        </ReactMarkdown>
+      )}
+    </div>
+  );
+};
+
+// Component for the chat messages display
+const ChatMessages = ({ 
+  activeThread,
+  isLoading,
+  messagesEndRef,
+  onApplyEdit
+}: { 
+  activeThread: ChatThread | null,
+  isLoading: boolean,
+  messagesEndRef: React.RefObject<HTMLDivElement>,
+  onApplyEdit?: (text: string, selectionInfo?: any) => void
+}) => {
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-[13px] text-gray-500">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Loading chats...</span>
+      </div>
+    );
+  }
+  
+  if (!activeThread) {
+    return (
+      <p className="text-[13px] text-gray-600">
+        No chat selected
+      </p>
+    );
+  }
+  
+  if (activeThread.messages.length === 0) {
+    return (
+      <p className="text-[13px] text-gray-600">
+        Ask a question or upload a PDF to get started.
+      </p>
+    );
+  }
+  
+  return (
+    <div className="space-y-4">
+      {activeThread.messages.map((message, index) => (
+        <motion.div 
+          key={index} 
+          className="flex justify-start w-full"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <div className={`w-full ${
+            message.role === "user" 
+              ? message.type === "file"
+                ? "bg-transparent" 
+                : message.type === "selected-text"
+                  ? "bg-transparent"
+                  : "bg-gray-100 rounded-md px-4 py-2"
+              : "prose prose-sm max-w-none w-full"
+          }`}>
+            <MessageItem 
+              message={message}
+              messageIndex={index}
+              messages={activeThread.messages}
+              onApplyEdit={(text) => {
+                // Get selection info from the previous message if it exists
+                const prevMessage = index > 0 ? activeThread.messages[index-1] : undefined;
+                if (prevMessage?.type === "selected-text" && prevMessage.selectionInfo) {
+                  // Directly apply edit to the editor
+                  onApplyEdit?.(text, prevMessage.selectionInfo);
+                }
+              }}
+            />
+          </div>
+        </motion.div>
+      ))}
+      
+      {activeThread.currentResponse && (
+        <motion.div 
+          className="flex justify-start w-full"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="prose prose-sm w-full">
+            <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>pre]:max-w-full [&>pre]:whitespace-pre-wrap [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded [&>code]:break-words">
+              {activeThread.currentResponse}
+            </ReactMarkdown>
+          </div>
+        </motion.div>
+      )}
+      
+      {activeThread.isLoading && !activeThread.currentResponse && (
+        <div className="flex items-center gap-2 text-[13px] text-gray-500">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>Thinking...</span>
+        </div>
+      )}
+      
+      <div ref={messagesEndRef} />
+    </div>
+  );
+};
+
+// Component for chat thread list dropdown
+const ChatThreadList = ({ 
+  threads, 
+  setActiveThreadId, 
+  handleDeleteChat 
+}: { 
+  threads: ChatThread[], 
+  setActiveThreadId: (id: string) => void, 
+  handleDeleteChat: (id: string) => void 
+}) => {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
+          <History className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel className="text-xs">Chat Threads</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {threads.map((thread) => (
+          <DropdownMenuItem 
+            key={thread.id} 
+            className="text-xs flex items-center justify-between group"
+            onClick={() => setActiveThreadId(thread.id)}
+          >
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Clock className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">{thread.title}</span>
+            </div>
+            {threads.length > 1 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleDeleteChat(thread.id)
+                }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
+// Custom hook for chat operations
+const useChatOperations = (
+  activeThread: ChatThread | null,
+  updateThread: (threadId: string, updates: Partial<ChatThread>) => void
+) => {
+  const { toast } = useToast();
+  
+  const handleSubmit = useCallback(async (text: string) => {
+    if (!activeThread || activeThread.isLoading) return;
 
     const thread = activeThread; // Create a stable reference that TypeScript can track
 
@@ -329,11 +610,11 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
       return;
     }
 
-    const newMessages: Message[] = []
+    const newMessages: Message[] = [];
 
     // If there's input, add it as a message bubble
     if (text.trim()) {
-      newMessages.push({ role: "user", content: text, type: "text" })
+      newMessages.push({ role: "user", content: text, type: "text" });
     }
 
     // If there's a PDF, add it as a separate bubble with preview
@@ -343,7 +624,7 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
           role: "user", 
           content: "Please analyze this PDF.",
           type: "text"
-        })
+        });
       }
       newMessages.push({ 
         role: "user", 
@@ -354,18 +635,18 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
           url: thread.pdfFile.previewUrl || '',
           contentType: 'application/pdf'
         }
-      })
+      });
     }
 
-    if (newMessages.length === 0) return
+    if (newMessages.length === 0) return;
 
     // Update UI optimistically
-    const updatedMessages = [...thread.messages, ...newMessages]
+    const updatedMessages = [...thread.messages, ...newMessages];
     updateThread(thread.id, { 
       messages: updatedMessages,
       isLoading: true,
       currentResponse: "" 
-    })
+    });
 
     try {
       // First, save the user messages
@@ -380,10 +661,10 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
       }
 
       // Then start streaming and wait for completion
-      let fullResponse = ""
+      let fullResponse = "";
       await streamChat(updatedMessages, (chunk) => {
-        fullResponse += chunk
-        updateThread(thread.id, { currentResponse: fullResponse })
+        fullResponse += chunk;
+        updateThread(thread.id, { currentResponse: fullResponse });
       }, thread.pdfFile?.id);
 
       // After streaming is complete, save the assistant's message
@@ -391,13 +672,13 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         role: "assistant", 
         content: fullResponse,
         type: "text"
-      }
+      };
       
       const assistantResponse = await fetch(`/api/chats/${thread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [assistantMessage] })
-      })
+      });
 
       if (!assistantResponse.ok) {
         throw new Error('Failed to save assistant message');
@@ -409,70 +690,241 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
         currentResponse: "",
         isLoading: false,
         pdfFile: null // Clear the PDF after processing
-      })
+      });
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to process your message. Please try again.",
         variant: "destructive",
-      })
+      });
       // Revert the thread state on error
       updateThread(thread.id, { 
         messages: thread.messages,
         currentResponse: "",
         isLoading: false
-      })
+      });
     }
-  }
+  }, [activeThread, updateThread, toast]);
 
-  const startResizing = useCallback((e: React.MouseEvent) => {
-    isResizing.current = true
-    startX.current = e.pageX
-    startWidth.current = width
-    document.body.style.cursor = 'ew-resize'
-    document.body.style.userSelect = 'none'
-  }, [width])
+  const handleSearch = useCallback(async (value: string) => {
+    if (!activeThread || activeThread.isLoading) return;
+    
+    const userMessage: Message = { role: "user", content: `Search: ${value}`, type: "text" };
+    
+    // Update UI optimistically
+    const updatedMessages = [...activeThread.messages, userMessage];
+    updateThread(activeThread.id, { 
+      messages: updatedMessages,
+      isLoading: true,
+      currentResponse: "" 
+    });
 
-  const stopResizing = useCallback(() => {
-    isResizing.current = false
-    document.body.style.cursor = 'default'
-    document.body.style.userSelect = 'auto'
-  }, [])
+    try {
+      // First save the user message
+      const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [userMessage] })
+      });
 
-  const resize = useCallback((e: MouseEvent) => {
-    if (!isResizing.current) return
+      if (!userResponse.ok) {
+        throw new Error('Failed to save user message');
+      }
 
-    const newWidth = startWidth.current - (e.pageX - startX.current)
-    // Set min and max width limits
-    if (newWidth > 300 && newWidth < 800) {
-      setWidth(newWidth)
+      // Then perform the search
+      let fullResponse = "";
+      await performSearchGrounding(value, (chunk) => {
+        fullResponse += chunk;
+        updateThread(activeThread.id, { currentResponse: fullResponse });
+      });
+      
+      // After search is complete, save the assistant's message
+      const assistantMessage: Message = { 
+        role: "assistant", 
+        content: fullResponse,
+        type: "text"
+      };
+
+      const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [assistantMessage] })
+      });
+
+      if (!assistantResponse.ok) {
+        throw new Error('Failed to save assistant message');
+      }
+
+      // Update UI with final state
+      updateThread(activeThread.id, { 
+        messages: [...updatedMessages, assistantMessage],
+        isLoading: false,
+        currentResponse: ""
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to perform search. Please try again.",
+        variant: "destructive",
+      });
+      // Revert thread state on error
+      updateThread(activeThread.id, { 
+        messages: activeThread.messages,
+        isLoading: false,
+        currentResponse: ""
+      });
     }
-  }, [])
+  }, [activeThread, updateThread, toast]);
 
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!activeThread) {
+      toast({
+        title: "Error",
+        description: "No active chat selected. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.type === "application/pdf") {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      updateThread(activeThread.id, { isLoading: true });
+      try {
+        const response = await fetch("/api/process-pdf", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) throw new Error("Upload failed");
+
+        const { fileId, fileName } = await response.json();
+        const previewUrl = URL.createObjectURL(file);
+        
+        // Show a toast notification to remind users about in-memory storage
+        toast({
+          title: "PDF Uploaded",
+          description: "The PDF is stored temporarily. Please complete your query now as the file will be unavailable after server restart.",
+        });
+        
+        updateThread(activeThread.id, { 
+          pdfFile: { id: fileId, name: fileName, previewUrl },
+          isLoading: false
+        });
+      } catch (error) {
+        console.error("PDF upload error:", error);
+        toast({
+          title: "Error",
+          description: "Failed to upload the PDF. Please try again.",
+          variant: "destructive",
+        });
+        updateThread(activeThread.id, { isLoading: false });
+      }
+    } else {
+      toast({
+        title: "Error",
+        description: "Only PDF files are supported.",
+        variant: "destructive",
+      });
+    }
+  }, [activeThread, updateThread, toast]);
+
+  return { handleSubmit, handleSearch, handleFileUpload };
+};
+
+// Main AIAssistant component
+export function AIAssistant({ 
+  className, 
+  onChatChange, 
+  onAddToChat, 
+  selectedText: propSelectedText,
+  onApplyEdit
+}: AIAssistantProps) {
+  const { width, startResizing } = useResizablePanel(400);
+  const { 
+    threads, 
+    activeThread, 
+    activeThreadId, 
+    isLoading, 
+    setActiveThreadId, 
+    createNewThread, 
+    updateThread, 
+    deleteThread, 
+    deleteAllChats 
+  } = useChatThreads(onChatChange);
+  const [selectedText, setSelectedText] = useState<string | undefined>();
+  const [selectionInfo, setSelectionInfo] = useState<any>(undefined);
+  
+  // Sync the selectedText from props
   useEffect(() => {
-    document.addEventListener('mousemove', resize)
-    document.addEventListener('mouseup', stopResizing)
-    return () => {
-      document.removeEventListener('mousemove', resize)
-      document.removeEventListener('mouseup', stopResizing)
+    if (propSelectedText) {
+      setSelectedText(propSelectedText);
     }
-  }, [resize, stopResizing])
+  }, [propSelectedText]);
+  
+  const { toast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // We need to ensure activeThread is defined before passing to useChatOperations
+  const chatOperations = useChatOperations(
+    activeThread ?? null,  // Use nullish coalescing operator 
+    updateThread
+  );
+  
+  const { handleSubmit, handleSearch, handleFileUpload } = chatOperations;
 
-  // Update the parent component when active thread changes
+  // Update thread title based on first message
   useEffect(() => {
-    onChatChange?.(activeThreadId)
-  }, [activeThreadId, onChatChange])
+    if (activeThread?.messages.length === 1 && activeThread.messages[0].role === 'user') {
+      const title = activeThread.messages[0].content.slice(0, 30) + (activeThread.messages[0].content.length > 30 ? '...' : '');
+      updateThread(activeThread.id, { title });
+    }
+  }, [activeThread, updateThread]);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  // Auto-scroll for streaming
+  useEffect(() => {
+    if (activeThread?.currentResponse) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [activeThread?.currentResponse]);
+
+  // Scroll for new messages
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom, activeThread?.messages]);
+
+  const handleDeleteChat = useCallback((chatId: string) => {
+    deleteThread(chatId);
+  }, [deleteThread]);
+  
+  // Handle adding text from the editor to chat
+  const handleAddToChat = useCallback((text: string, info: { startLine: number, endLine: number }) => {
+    const selectionPreview = `Lines ${info.startLine}-${info.endLine}`;
+    setSelectedText(text);
+    setSelectionInfo(info);
+    if (onAddToChat) {
+      onAddToChat(text);
+    }
+  }, [onAddToChat]);
 
   return (
     <div 
-      className={`bg-white flex ${className}`} 
+      className={`bg-white flex overflow-hidden ${className}`} 
       style={{ width: `${width}px` }}
     >
       <div
         className="w-1 cursor-ew-resize hover:bg-gray-200 transition-colors"
         onMouseDown={startResizing}
+        aria-label="Resize panel"
+        role="separator"
       />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
         <div className="flex items-center justify-between h-12 px-4 border-b border-gray-200">
           <span className="text-[13px] text-gray-700 font-medium">AI Assistant (Gemini 2.0 Flash)</span>
           <div className="flex items-center gap-1">
@@ -481,268 +933,213 @@ export function AIAssistant({ className, onChatChange }: AIAssistantProps) {
               size="icon" 
               className="h-7 w-7 text-gray-500 hover:bg-gray-100"
               onClick={createNewThread}
+              aria-label="New chat"
             >
               <Plus className="h-4 w-4" />
             </Button>
             {threads.length > 0 && (
               <Button
                 variant="ghost"
-                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                size="icon"
+                className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 w-7"
                 onClick={deleteAllChats}
+                aria-label="Delete all chats"
               >
-                Delete All
+                <Trash2 className="h-4 w-4" />
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
-                  <History className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuLabel className="text-xs">Chat Threads</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {threads.map((thread) => (
-                  <DropdownMenuItem 
-                    key={thread.id} 
-                    className="text-xs flex items-center justify-between group"
-                    onClick={() => setActiveThreadId(thread.id)}
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Clock className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{thread.title}</span>
-                    </div>
-                    {threads.length > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteChat(thread.id)
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100">
+            <ChatThreadList 
+              threads={threads} 
+              setActiveThreadId={setActiveThreadId} 
+              handleDeleteChat={handleDeleteChat}
+            />
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:bg-gray-100" aria-label="More options">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
         </div>
+        
+        {/* Messages Area */}
         <div className="flex flex-col h-[calc(100vh-112px)]">
-          <ScrollArea className="flex-1 p-4">
-            {isLoading ? (
-              <div className="flex items-center gap-2 text-[13px] text-gray-500">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                <span>Loading chats...</span>
-              </div>
-            ) : !activeThread ? (
-              <p className="text-[13px] text-gray-600">
-                No chat selected
-              </p>
-            ) : activeThread.messages.length === 0 ? (
-              <p className="text-[13px] text-gray-600">
-                Ask a question or upload a PDF to get started.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {activeThread.messages.map((message, index) => (
-                  <div key={index} className="flex justify-start w-full">
-                    <div className={`w-full ${
-                      message.role === "user" 
-                        ? message.type === "file"
-                          ? "bg-transparent" 
-                          : "bg-gray-100 rounded-md px-4 py-2"
-                        : "prose prose-sm max-w-none w-full"
-                    }`}>
-                      {message.role === "user" ? (
-                        message.type === "file" ? (
-                          <PreviewAttachment
-                            attachment={{
-                              name: message.fileDetails?.name || '',
-                              url: message.fileDetails?.url || '',
-                              contentType: message.fileDetails?.contentType
-                            }}
-                            isUploading={false}
-                          />
-                        ) : (
-                          <div className="text-[13px] text-gray-700">{message.content}</div>
-                        )
-                      ) : (
-                        <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded">
-                          {message.content}
-                        </ReactMarkdown>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {activeThread.currentResponse && (
-                  <div className="flex justify-start w-full">
-                    <div className="prose prose-sm w-full">
-                      <ReactMarkdown className="text-[13px] text-gray-700 [&>*]:mb-4 [&>*:last-child]:mb-0 [&>p]:leading-relaxed [&>ul]:space-y-2 [&>ol]:space-y-2 [&>h1]:text-xl [&>h2]:text-lg [&>h2]:mt-6 [&>h3]:text-base [&>h3]:mt-4 [&>blockquote]:pl-4 [&>blockquote]:border-l-2 [&>blockquote]:border-gray-300 [&>blockquote]:italic [&>pre]:bg-gray-100 [&>pre]:p-4 [&>pre]:rounded-md [&>pre]:overflow-auto [&>code]:bg-gray-100 [&>code]:px-1 [&>code]:py-0.5 [&>code]:rounded">
-                        {activeThread.currentResponse}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-                {activeThread.isLoading && !activeThread.currentResponse && (
-                  <div className="flex items-center gap-2 text-[13px] text-gray-500">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Thinking...</span>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-          </ScrollArea>
+          <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden w-full">
+            <ChatMessages
+              activeThread={activeThread ?? null}
+              isLoading={isLoading}
+              messagesEndRef={messagesEndRef}
+              onApplyEdit={(text, editSelectionInfo) => {
+                // This is where we handle applying the edit back to the editor
+                toast({
+                  title: "Applying edit",
+                  description: "The AI's changes are being applied to the document.",
+                });
+                
+                // Call the parent component's onApplyEdit function if available
+                if (onApplyEdit) {
+                  onApplyEdit(text, editSelectionInfo);
+                  
+                  // Show success toast
+                  toast({
+                    title: "Edit applied",
+                    description: "The document has been updated with the AI's changes.",
+                    variant: "success"
+                  });
+                } else {
+                  console.log("No onApplyEdit handler available:", text, editSelectionInfo);
+                  toast({
+                    title: "Cannot apply edit",
+                    description: "The edit function is not available.",
+                    variant: "destructive"
+                  });
+                }
+              }}
+            />
+          </div>
+          
+          {/* Input Area */}
           <div className="border-gray-200">
             <AIInputWithSearch
               placeholder={activeThread?.pdfFile 
                 ? "Ask a question about the PDF..."
-                : "Ask a question or upload a PDF..."}
+                : selectedText 
+                  ? "Ask about the selected text..." 
+                  : "Ask a question or upload a PDF..."}
               containerWidth={width}
+              selectedText={selectedText}
+              onClearSelectedText={() => setSelectedText(undefined)}
               onSubmit={async (value, withSearch) => {
                 if (!activeThread) {
                   toast({
                     title: "Error",
                     description: "No active chat selected. Please try again.",
                     variant: "destructive",
-                  })
-                  return
+                  });
+                  return;
                 }
 
-                if (activeThread.isLoading) return
+                if (activeThread.isLoading) return;
 
                 // If we have a PDF loaded, always use PDF flow regardless of search toggle
                 if (activeThread.pdfFile) {
-                  await handleSubmit(value)
-                  return
+                  await handleSubmit(value);
+                  return;
                 }
                 
-                // Otherwise handle normal search/chat
-                if (withSearch) {
-                  const userMessage: Message = { role: "user", content: `Search: ${value}`, type: "text" }
+                // If we have selected text, add it to the message
+                if (selectedText) {
+                  // Get the actual selection info or use default values
+                  const startLine = selectionInfo?.startLine || 5;
+                  const endLine = selectionInfo?.endLine || 15;
+                  
+                  // Create a message that includes the selected text
+                  const newMessages: Message[] = [
+                    { 
+                      role: "user", 
+                      content: value, 
+                      type: "selected-text",
+                      selectedText: selectedText,
+                      selectionInfo: {
+                        lines: `Lines ${startLine}-${endLine}`,
+                        startLine: startLine,
+                        endLine: endLine
+                      }
+                    }
+                  ];
                   
                   // Update UI optimistically
-                  const updatedMessages = [...activeThread.messages, userMessage]
                   updateThread(activeThread.id, { 
-                    messages: updatedMessages,
+                    messages: [...activeThread.messages, ...newMessages],
                     isLoading: true,
                     currentResponse: "" 
-                  })
-
+                  });
+                  
                   try {
-                    // First save the user message
+                    // Save the message
                     const userResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ messages: [userMessage] })
+                      body: JSON.stringify({ messages: newMessages })
                     });
-
+                    
                     if (!userResponse.ok) {
                       throw new Error('Failed to save user message');
                     }
-
-                    // Then perform the search
-                    let fullResponse = ""
-                    await performSearchGrounding(value, (chunk) => {
-                      fullResponse += chunk
-                      updateThread(activeThread.id, { currentResponse: fullResponse })
-                    })
                     
-                    // After search is complete, save the assistant's message
+                    // Stream the chat response
+                    let fullResponse = "";
+                    await streamChat([...activeThread.messages, ...newMessages], (chunk) => {
+                      fullResponse += chunk;
+                      updateThread(activeThread.id, { currentResponse: fullResponse });
+                    });
+                    
+                    // Save the assistant's response
                     const assistantMessage: Message = { 
                       role: "assistant", 
                       content: fullResponse,
                       type: "text"
-                    }
-
-                    const assistantResponse = await fetch(`/api/chats/${activeThread.id}/messages`, {
+                    };
+                    
+                    await fetch(`/api/chats/${activeThread.id}/messages`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ messages: [assistantMessage] })
-                    })
-
-                    if (!assistantResponse.ok) {
-                      throw new Error('Failed to save assistant message');
-                    }
-
-                    // Update UI with final state
+                    });
+                    
+                    // Update UI
                     updateThread(activeThread.id, { 
-                      messages: [...updatedMessages, assistantMessage],
-                      isLoading: false,
-                      currentResponse: ""
-                    })
+                      messages: [...activeThread.messages, ...newMessages, assistantMessage],
+                      currentResponse: "",
+                      isLoading: false
+                    });
+                    
+                    // Get the AI response as potential inline edit
+                    const aiResponse = fullResponse.trim();
+                    
+                    // Function to detect if this is a direct text replacement (no markdown or explanations)
+                    const isDirectReplacement = (text: string) => {
+                      // Check if response doesn't have markdown code blocks, lists, headers, etc.
+                      return !text.includes('```') && 
+                             !text.includes('#') &&
+                             !text.match(/^\d+\.|^\*|\[.*\]\(.*\)/m);
+                    };
+                    
+                    // If this appears to be an inline edit, show apply button
+                    if (isDirectReplacement(aiResponse)) {
+                      // TODO: Add inline edit apply functionality here
+                      console.log("This could be applied as an inline edit:", aiResponse);
+                    }
+                    
+                    // Clear the selected text
+                    setSelectedText(undefined);
+                    
                   } catch (error) {
                     toast({
                       title: "Error",
-                      description: "Failed to perform search. Please try again.",
+                      description: "Failed to process your message. Please try again.",
                       variant: "destructive",
-                    })
-                    // Revert thread state on error
+                    });
+                    // Revert on error
                     updateThread(activeThread.id, { 
                       messages: activeThread.messages,
-                      isLoading: false,
-                      currentResponse: ""
-                    })
+                      currentResponse: "",
+                      isLoading: false
+                    });
                   }
+                  
+                  return;
+                }
+                
+                // Otherwise handle normal search/chat
+                if (withSearch) {
+                  await handleSearch(value);
                 } else {
-                  await handleSubmit(value)
+                  await handleSubmit(value);
                 }
               }}
-              onFileSelect={async (file) => {
-                if (!activeThread) {
-                  toast({
-                    title: "Error",
-                    description: "No active chat selected. Please try again.",
-                    variant: "destructive",
-                  })
-                  return
-                }
-
-                if (file.type === "application/pdf") {
-                  const formData = new FormData()
-                  formData.append("file", file)
-
-                  updateThread(activeThread.id, { isLoading: true })
-                  try {
-                    const response = await fetch("/api/process-pdf", {
-                      method: "POST",
-                      body: formData,
-                    })
-
-                    if (!response.ok) throw new Error("Upload failed")
-
-                    const { fileId, fileName } = await response.json()
-                    const previewUrl = URL.createObjectURL(file)
-                    updateThread(activeThread.id, { pdfFile: { id: fileId, name: fileName, previewUrl } })
-                  } catch (error) {
-                    console.error("PDF upload error:", error)
-                    toast({
-                      title: "Error",
-                      description: "Failed to upload the PDF. Please try again.",
-                      variant: "destructive",
-                    })
-                  } finally {
-                    updateThread(activeThread.id, { isLoading: false })
-                  }
-                } else {
-                  toast({
-                    title: "Error",
-                    description: "Only PDF files are supported.",
-                    variant: "destructive",
-                  })
-                }
-              }}
+              onFileSelect={handleFileUpload}
             />
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

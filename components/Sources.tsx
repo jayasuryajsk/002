@@ -19,29 +19,43 @@ export const Sources = ({ tenderAgent }: SourcesProps) => {
   // Load sources on mount
   useEffect(() => {
     const baseUrl = window.location.origin;
+    setIsLoading(true);
     
-    fetch(`${baseUrl}/api/tender/sources`)
+    fetch(`${baseUrl}/api/tender/sources?refresh=true`)
       .then(res => res.json())
       .then((sourcesData) => {
         setSources(sourcesData);
       })
       .catch(error => {
         console.error('Error loading source documents:', error);
+        toast({
+          title: 'Error Loading Documents',
+          description: 'Failed to load source documents. Please try refreshing the page.',
+          variant: 'destructive',
+        });
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, []);
+  }, [toast]);
 
   // Handle source document file upload
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return;
+    const files = event.target.files
+    if (!files?.length) return
 
-    if (file.type !== 'application/pdf' && !file.type.includes('text/')) {
+    // Check if we have valid files
+    const validFiles = Array.from(files).filter(file => 
+      file.type === 'application/pdf' || 
+      file.type.includes('text/') || 
+      file.name.endsWith('.doc') || 
+      file.name.endsWith('.docx')
+    )
+    
+    if (validFiles.length === 0) {
       toast({
         title: "Invalid file type",
-        description: "Only PDF and text files are supported.",
+        description: "Only PDF, DOC, DOCX and text files are supported.",
         variant: "destructive",
       });
       return;
@@ -50,18 +64,27 @@ export const Sources = ({ tenderAgent }: SourcesProps) => {
     setIsUploading(true);
     
     try {
-      await tenderAgent.addSourceDocument(file);
+      // Upload all valid files
+      for (const file of validFiles) {
+        await tenderAgent.addSourceDocument(file);
+      }
       
       // Refresh sources list
       const baseUrl = window.location.origin;
       const response = await fetch(`${baseUrl}/api/tender/sources`);
       const updatedSources = await response.json();
       setSources(updatedSources);
+      
+      toast({
+        title: "Success",
+        description: `${validFiles.length} source document(s) uploaded successfully.`,
+        duration: 3000,
+      });
     } catch (error) {
       console.error('Error adding source:', error);
       toast({
         title: "Error",
-        description: "Failed to add source document.",
+        description: "Failed to add source document(s).",
         variant: "destructive",
       });
     } finally {
@@ -92,7 +115,13 @@ export const Sources = ({ tenderAgent }: SourcesProps) => {
 
   // Handle clearing all source documents
   const handleClearAll = useCallback(async () => {
+    // Confirm with the user
+    if (!window.confirm("Are you sure you want to clear all documents? This action cannot be undone.")) {
+      return;
+    }
+    
     try {
+      setIsLoading(true);
       const baseUrl = window.location.origin;
       const response = await fetch(`${baseUrl}/api/tender/clear-all-docs`, {
         method: "DELETE",
@@ -102,9 +131,32 @@ export const Sources = ({ tenderAgent }: SourcesProps) => {
         throw new Error('Failed to clear documents');
       }
 
+      // Reset the state immediately
       setSources([]);
+      
+      // Force a refresh from the server after a short delay
+      setTimeout(async () => {
+        try {
+          const refreshResponse = await fetch(`${baseUrl}/api/tender/sources?refresh=true&t=${Date.now()}`);
+          
+          if (refreshResponse.ok) {
+            const updatedSources = await refreshResponse.json();
+            setSources(updatedSources);
+          }
+        } catch (refreshError) {
+          console.error('Error refreshing sources:', refreshError);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 500);
+
+      toast({
+        title: "Success",
+        description: "All documents have been cleared.",
+      });
     } catch (error) {
       console.error('Error clearing documents:', error);
+      setIsLoading(false);
       toast({
         title: "Error",
         description: "Failed to clear documents.",
@@ -144,6 +196,7 @@ export const Sources = ({ tenderAgent }: SourcesProps) => {
             onChange={handleFileUpload}
             accept="application/pdf,text/plain,.doc,.docx"
             disabled={isUploading}
+            multiple
           />
           {sources.length > 0 && (
             <Button

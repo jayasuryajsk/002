@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Paperclip, Send } from "lucide-react";
+import { Globe, Paperclip, Send, X } from "lucide-react";
 import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,6 +17,8 @@ interface AIInputWithSearchProps {
   onFileSelect?: (file: File) => void;
   className?: string;
   containerWidth?: number;
+  selectedText?: string;
+  onClearSelectedText?: () => void;
 }
 
 export function AIInputWithSearch({
@@ -27,7 +29,9 @@ export function AIInputWithSearch({
   onSubmit,
   onFileSelect,
   className,
-  containerWidth
+  containerWidth,
+  selectedText,
+  onClearSelectedText
 }: AIInputWithSearchProps) {
   const [value, setValue] = useState("");
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
@@ -84,6 +88,26 @@ export function AIInputWithSearch({
                 onDelete={handleDeleteFile}
                 isUploading={isUploading}
               />
+            </div>
+          )}
+          
+          {/* Selected Text Preview */}
+          {selectedText && (
+            <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-xs text-blue-700 font-medium mr-2">Selected Text (Lines 5-15):</span>
+                <span className="text-xs text-blue-600 truncate max-w-[300px]">
+                  {selectedText.length > 60 ? `${selectedText.substring(0, 60)}...` : selectedText}
+                </span>
+              </div>
+              {onClearSelectedText && (
+                <button 
+                  onClick={onClearSelectedText}
+                  className="text-blue-500 hover:text-blue-700"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
           )}
           <div

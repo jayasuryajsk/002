@@ -1,8 +1,11 @@
 import { AgentRole, AgentMessage, TenderDocument, TenderSection, SourceDocument } from './types'
 import { RequirementsAnalyzer } from './requirements-analyzer'
-import { PluginKey } from '@tiptap/pm/state'
+// Commented out to disable auto-complete functionality
+// import { PluginKey } from '@tiptap/pm/state'
+import { marked } from 'marked' // Import marked for markdown conversion
 
-const suggestionPluginKey = new PluginKey('suggestions')
+// Commented out to disable auto-complete functionality
+// const suggestionPluginKey = new PluginKey('suggestions')
 
 // Helper to check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined'
@@ -100,10 +103,11 @@ export class TenderWriterAgent {
     
     this.isWriting = true
     
+    // Commented out to disable auto-complete functionality
     // Disable suggestions while agent is writing
-    this.editor.view.dispatch(
-      this.editor.view.state.tr.setMeta(suggestionPluginKey, { clear: true })
-    )
+    // this.editor.view.dispatch(
+    //   this.editor.view.state.tr.setMeta(suggestionPluginKey, { clear: true })
+    // )
 
     try {
       // Initialize new tender document
@@ -168,8 +172,56 @@ export class TenderWriterAgent {
         const chunk = decoder.decode(value)
         buffer += chunk
 
-        // Update editor content
-        this.editor.commands.setContent(buffer)
+        // Process the markdown to HTML with proper formatting before setting content
+        try {
+          // Import the markdownToHtml function implementation from TipTapEditor
+          // Pre-process the markdown to ensure proper spacing and formatting
+          let processedMarkdown = buffer
+            // Ensure proper spacing after heading markers
+            .replace(/^(#{1,6})([^#\s])/gm, '$1 $2')
+            // Add extra newline before headings for better separation
+            .replace(/^(#{1,6})/gm, '\n$1')
+            // Ensure proper spacing after list markers
+            .replace(/^(\s*[-*+])([^\s])/gm, '$1 $2')
+            // Ensure space after ordered list markers
+            .replace(/^(\s*\d+\.)([^\s])/gm, '$1 $2')
+            // Add space between paragraphs if missing
+            .replace(/([^\n])\n([^\n])/g, '$1\n\n$2')
+            // Ensure proper spacing around horizontal rules
+            .replace(/^---/gm, '\n\n---\n\n');
+          
+          // Use marked library to convert markdown to HTML
+          const html = marked.parse(processedMarkdown, {
+            gfm: true,
+            breaks: true
+          });
+          
+          // Enhanced post-processing for better visual structure
+          const formattedHtml = (html as string)
+            // Add strong visual hierarchy with spacing and typography
+            .replace(/<h1/g, '<h1 class="text-3xl font-bold mt-8 mb-4 pb-2 border-b"')
+            .replace(/<h2/g, '<h2 class="text-2xl font-bold mt-6 mb-3 pt-2"')
+            .replace(/<h3/g, '<h3 class="text-xl font-semibold mt-5 mb-2"')
+            // Improve list formatting
+            .replace(/<ul>/g, '<ul class="list-disc pl-6 my-4 space-y-2">')
+            .replace(/<ol>/g, '<ol class="list-decimal pl-6 my-4 space-y-2">')
+            .replace(/<li>/g, '<li class="ml-2 pl-2">')
+            // Improve paragraph spacing
+            .replace(/<p>/g, '<p class="my-3">')
+            // Add styling for blockquotes
+            .replace(/<blockquote>/g, '<blockquote class="pl-4 border-l-4 border-gray-300 my-4 italic">')
+            // Improve table formatting
+            .replace(/<table>/g, '<table class="min-w-full border-collapse my-4">')
+            .replace(/<th>/g, '<th class="border px-4 py-2 bg-gray-100 font-semibold">')
+            .replace(/<td>/g, '<td class="border px-4 py-2">');
+            
+          // Update editor content with properly formatted HTML
+          this.editor.commands.setContent(formattedHtml);
+        } catch (error) {
+          console.error('Error converting markdown to HTML:', error);
+          // Fallback to setting raw content if conversion fails
+          this.editor.commands.setContent(`<div>${buffer}</div>`);
+        }
       }
 
       console.log('Tender generation completed successfully')
@@ -183,10 +235,11 @@ export class TenderWriterAgent {
     } finally {
       this.isWriting = false
       
+      // Commented out to disable auto-complete functionality
       // Re-enable suggestions after agent is done
-      this.editor.view.dispatch(
-        this.editor.view.state.tr.setMeta(suggestionPluginKey, { add: true })
-      )
+      // this.editor.view.dispatch(
+      //   this.editor.view.state.tr.setMeta(suggestionPluginKey, { add: true })
+      // )
     }
   }
 

@@ -95,11 +95,11 @@ export default function TenderWriterApp() {
         {/* Left Sidebar - Notes & Sources */}
         <div
           className={`border-r border-border/60 bg-white transition-all duration-300 ease-in-out ${
-            isSidebarCollapsed ? "w-[40px]" : "w-[350px]"
+            isSidebarCollapsed ? "w-[10px]" : "w-[350px]"
           } relative shadow-subtle`}
         >
           <SidebarToggle isCollapsed={isSidebarCollapsed} onToggle={toggleSidebar} />
-          <div className={`h-full transition-opacity duration-300 ${isSidebarCollapsed ? "opacity-0" : "opacity-100"}`}>
+          <div className={`h-full transition-opacity duration-300 ${isSidebarCollapsed ? "opacity-0 invisible" : "opacity-100 visible"}`}>
             <Tabs defaultValue="notes" className="h-full flex flex-col">
               <div className="flex items-center h-12 px-4 border-b border-border/60">
                 <TabsList className="grid w-full grid-cols-3 h-8 bg-muted/60 p-1 gap-1 rounded-md">

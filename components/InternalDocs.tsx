@@ -19,9 +19,10 @@ export function InternalDocs({ tenderAgent }: InternalDocsProps) {
   // Load company documents on mount
   useEffect(() => {
     const baseUrl = window.location.origin
+    setIsLoading(true)
     
     // Load company documents
-    fetch(`${baseUrl}/api/tender/company-docs`)
+    fetch(`${baseUrl}/api/tender/company-docs?refresh=true`)
       .then(res => res.json())
       .then((companyDocsData) => {
         // Format company docs to match the SourceDocument structure
@@ -41,11 +42,16 @@ export function InternalDocs({ tenderAgent }: InternalDocsProps) {
       })
       .catch(error => {
         console.error('Error loading company documents:', error)
+        toast({
+          title: 'Error Loading Documents',
+          description: 'Failed to load company documents. Please try refreshing the page.',
+          variant: 'destructive',
+        })
       })
       .finally(() => {
         setIsLoading(false)
       })
-  }, [])
+  }, [toast])
 
   // Handle company document file upload
   const handleCompanyFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,26 +132,67 @@ export function InternalDocs({ tenderAgent }: InternalDocsProps) {
 
   // Handle clearing all company documents
   const handleClearAll = useCallback(async () => {
+    // Confirm with the user
+    if (!window.confirm("Are you sure you want to clear all documents? This action cannot be undone.")) {
+      return;
+    }
+    
     try {
-      const baseUrl = window.location.origin
+      setIsLoading(true);
+      const baseUrl = window.location.origin;
       const response = await fetch(`${baseUrl}/api/tender/clear-all-docs`, {
         method: "DELETE",
-      })
+      });
 
       if (!response.ok) {
-        throw new Error('Failed to clear documents')
+        throw new Error('Failed to clear documents');
       }
 
-      setCompanyDocs([])
+      // Reset the state immediately
+      setCompanyDocs([]);
+      
+      // Force a refresh from the server after a short delay
+      setTimeout(async () => {
+        try {
+          const refreshResponse = await fetch(`${baseUrl}/api/tender/company-docs?refresh=true&t=${Date.now()}`);
+          
+          if (refreshResponse.ok) {
+            const updatedCompanyDocs = await refreshResponse.json();
+            setCompanyDocs(updatedCompanyDocs.map((doc: any) => ({
+              id: doc.id,
+              title: doc.title,
+              content: doc.content,
+              binaryData: doc.binaryData,
+              type: 'other',
+              metadata: {
+                dateAdded: doc.metadata?.dateAdded || new Date().toISOString(),
+                fileType: doc.metadata?.fileType || 'application/pdf',
+                fileSize: doc.metadata?.fileSize || 0,
+                path: doc.metadata?.path || doc.title
+              }
+            })));
+          }
+        } catch (refreshError) {
+          console.error('Error refreshing company documents:', refreshError);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 500);
+
+      toast({
+        title: "Success",
+        description: "All documents have been cleared.",
+      });
     } catch (error) {
-      console.error('Error clearing documents:', error)
+      console.error('Error clearing documents:', error);
+      setIsLoading(false);
       toast({
         title: "Error",
         description: "Failed to clear documents.",
         variant: "destructive",
-      })
+      });
     }
-  }, [toast])
+  }, [toast]);
 
   return (
     <div className="flex flex-col h-full">
