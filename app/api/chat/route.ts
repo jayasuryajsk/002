@@ -4,9 +4,11 @@ import { NextResponse } from "next/server"
 
 export const runtime = "edge"
 
-// Directly use the hardcoded key for testing
-const hardcodedKey = "AIzaSyASnoChTvU5PXKpTk0d30Pu-dssUT7mByk"
-const genAI = new GoogleGenerativeAI(hardcodedKey)
+const apiKey = process.env.GOOGLE_API_KEY;
+if (!apiKey) {
+  throw new Error('GOOGLE_API_KEY environment variable is not set');
+}
+const genAI = new GoogleGenerativeAI(apiKey)
 
 // Define a custom message type that includes the type field we need
 interface ChatMessage extends Message {
