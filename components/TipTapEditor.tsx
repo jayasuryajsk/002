@@ -6,7 +6,7 @@ import CodeBlock from '@tiptap/extension-code-block'
 import Placeholder from '@tiptap/extension-placeholder'
 // Re-enabling with non-functional version
 import { Suggestions } from '@/lib/tiptap/suggestion'
-import { TenderWriterAgent } from '@/lib/agents/tender-writer'
+import { TenderWriterAgent } from '@/lib/agents/generation/tender-writer'
 import { cn } from '@/lib/utils'
 import {
   Bold,
@@ -247,6 +247,7 @@ export function TipTapEditor({
   const [generationProgress, setGenerationProgress] = useState<string>('')
   const [generationStage, setGenerationStage] = useState<string>('')
   const [showProgress, setShowProgress] = useState(false)
+  const [progressPercentage, setProgressPercentage] = useState(0)
   
   // Store the last selection globally for context persistence
   const storeSelectionInWindow = useCallback((from: number, to: number, startLine: number, endLine: number) => {
@@ -793,31 +794,56 @@ export function TipTapEditor({
           if (done) break
           
           const chunk = decoder.decode(value)
-          buffer += chunk
           
-          // Update progress display based on markdown headers
-          if (chunk.includes('## Progress Update')) {
-            const progressMatch = chunk.match(/## Progress Update\s+([\s\S]+?)(?=\n\n|\n##|$)/)
-            if (progressMatch && progressMatch[1]) {
-              setGenerationProgress(progressMatch[1].trim())
-              
-              // Update stage based on certain keywords
-              if (progressMatch[1].includes('Analyzing')) {
-                setGenerationStage('Analyzing')
-              } else if (progressMatch[1].includes('Extracting')) {
-                setGenerationStage('Planning')
-              } else if (progressMatch[1].includes('Creating')) {
-                setGenerationStage('Planning')
-              } else if (progressMatch[1].includes('Generating')) {
-                setGenerationStage('Writing')
-              } else if (progressMatch[1].includes('Checking')) {
-                setGenerationStage('Reviewing')
-              } else if (progressMatch[1].includes('Finalizing')) {
-                setGenerationStage('Finalizing')
-              } else if (progressMatch[1].includes('Completed')) {
-                setGenerationStage('Complete')
+          // Extract progress updates from HTML comments
+          const progressUpdates = chunk.match(/<!-- PROGRESS_UPDATE: (.+?) -->/g)
+          if (progressUpdates && progressUpdates.length > 0) {
+            for (const update of progressUpdates) {
+              const messageMatch = update.match(/<!-- PROGRESS_UPDATE: (.+?) -->/)
+              if (messageMatch && messageMatch[1]) {
+                const progressMessage = messageMatch[1].trim()
+                setGenerationProgress(progressMessage)
+                
+                // Update stage based on certain keywords
+                if (progressMessage.includes('Analyzing')) {
+                  setGenerationStage('Analyzing')
+                  setProgressPercentage(20)
+                } else if (progressMessage.includes('Extracting')) {
+                  setGenerationStage('Planning')
+                  setProgressPercentage(40)
+                } else if (progressMessage.includes('Creating')) {
+                  setGenerationStage('Planning')
+                  setProgressPercentage(60)
+                } else if (progressMessage.includes('Generating')) {
+                  setGenerationStage('Writing')
+                  setProgressPercentage(75)
+                } else if (progressMessage.includes('Checking')) {
+                  setGenerationStage('Reviewing')
+                  setProgressPercentage(90)
+                } else if (progressMessage.includes('Finalizing')) {
+                  setGenerationStage('Finalizing')
+                  setProgressPercentage(95)
+                } else if (progressMessage.includes('Completed')) {
+                  setGenerationStage('Complete')
+                  setProgressPercentage(100)
+                }
+
+                // Check for section progress
+                const sectionMatch = progressMessage.match(/Generating section (\d+)\/(\d+)/)
+                if (sectionMatch) {
+                  const [_, current, total] = sectionMatch
+                  const sectionProgress = (parseInt(current) / parseInt(total)) * 100
+                  setProgressPercentage(75 + (sectionProgress * 0.15)) // Scale section progress between 75% and 90%
+                }
               }
             }
+            
+            // Remove all progress update comments from the chunk
+            const filteredChunk = chunk.replace(/<!-- PROGRESS_UPDATE: .+? -->\n?/g, '')
+            buffer += filteredChunk
+          } else {
+            // No progress updates in this chunk
+            buffer += chunk
           }
           
           // Skip Gemini's initialization messages
@@ -833,6 +859,8 @@ export function TipTapEditor({
               buffer = buffer
                 // Remove any potential preamble text before the first heading (without using 's' flag)
                 .replace(/^[\s\S]*?(#)/, '$1')
+                // Remove any remaining progress update comments
+                .replace(/<!-- PROGRESS_UPDATE: .+? -->\n?/g, '')
                 // Clean up any empty lines at the start
                 .replace(/^\s+/, '')
                 // Make sure to start with a proper heading
@@ -848,8 +876,11 @@ export function TipTapEditor({
           
           if (hasRealContent) {
             try {
+              // Clean the buffer of any progress updates before rendering
+              const cleanBuffer = buffer.replace(/<!-- PROGRESS_UPDATE: .+? -->\n?/g, '')
+              
               // Convert markdown to HTML before setting content
-              const htmlContent = markdownToHtml(buffer)
+              const htmlContent = markdownToHtml(cleanBuffer)
               editor.commands.setContent(htmlContent)
             } catch (error) {
               console.error('Error rendering content:', error)
@@ -969,144 +1000,13 @@ export function TipTapEditor({
     }
   }
 
-  // Add a new function to handle direct tender generation
-  const handleDirectGenerateTender = async () => {
-    if (!editor || isAgentWriting) return
-
-    setIsAgentWriting(true)
-    setShowProgress(true)
-    setGenerationProgress('Initializing direct tender generation process...')
-    setGenerationStage('Preparing')
-    
-    try {
-      // Clear editor before starting to prevent initial message display
-      editor.commands.clearContent()
-      
-      toast({
-        title: "Direct REST API Generation",
-        description: "Using direct Gemini REST API with axios for document processing.",
-      })
-      
-      // Base URL for API requests
-      const baseUrl = window.location.origin;
-      
-      // Attempt to generate tender with direct approach
-      try {
-        setGenerationProgress('Making direct API call to Gemini...')
-        setGenerationStage('Processing')
-        
-        const response = await fetch(`${baseUrl}/api/tender/direct-generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            prompt: editor.getText() || "Generate a comprehensive tender response addressing all requirements and highlighting company capabilities",
-            title: "Tender Response Document"
-          })
-        });
-
-        if (!response.ok) {
-          let errorMessage = `Failed to generate tender: ${response.status} ${response.statusText}`;
-          
-          try {
-            const errorData = await response.json();
-            console.error('Error response:', errorData);
-            
-            if (errorData.error) {
-              errorMessage = errorData.error;
-            }
-            if (errorData.details) {
-              console.error('Error details:', errorData.details);
-            }
-          } catch (parseError) {
-            const textError = await response.text();
-            console.error('Raw error response:', textError);
-          }
-          
-          throw new Error(errorMessage);
-        }
-
-        console.log('Direct tender generation started, streaming response...')
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('No reader available')
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let hasRealContent = false
-        
-        while (true) {
-          const { done, value } = await reader.read()
-          
-          if (done) break
-          
-          const chunk = decoder.decode(value)
-          buffer += chunk
-          
-          // Update progress display based on markdown headers
-          if (chunk.includes('## Progress Update')) {
-            const progressMatch = chunk.match(/## Progress Update\s+([\s\S]+?)(?=\n\n|\n##|$)/)
-            if (progressMatch && progressMatch[1]) {
-              setGenerationProgress(progressMatch[1].trim())
-            }
-          }
-          
-          // Look for content that's not just progress updates
-          if (!hasRealContent && chunk.includes('# Tender Response Document')) {
-            hasRealContent = true
-            setGenerationStage('Generated')
-          }
-          
-          // Update the editor content with the response text
-          // This creates a better UX by showing content as it arrives
-          editor.commands.setContent(buffer)
-        }
-
-        // If we get here, the generation completed successfully
-        setGenerationStage('Complete')
-        toast({
-          title: "Tender Generated Successfully",
-          description: "Direct generation method using Gemini 2.0 Flash completed.",
-          variant: "default",
-        })
-      } catch (error: any) {
-        console.error('Error generating tender:', error)
-        
-        toast({
-          title: "Error Generating Tender",
-          description: error.message || "An unexpected error occurred",
-          variant: "destructive",
-        })
-        
-        editor.commands.setContent(`# Error Generating Tender\n\n${error.message || "An unexpected error occurred"}`)
-      }
-    } catch (error: any) {
-      console.error('Error in generate handler:', error)
-      toast({
-        title: "Error",
-        description: error.message || "An unexpected error occurred",
-        variant: "destructive",
-      })
-    } finally {
-      setIsAgentWriting(false)
-    }
-  }
-
   // Add the button to the toolbar next to the existing Generate button
   const RenderMenuBar = ({ editor }: { editor: Editor }) => (
     <div className="flex flex-wrap items-center gap-1 p-1 bg-card rounded-t-md border-border/40 border-b-0 border">
       {/* Existing buttons... */}
       {/* ... */}
       
-      {/* Add the direct generate button */}
-      <Button
-        variant="secondary"
-        size="sm"
-        className="gap-1 text-xs"
-        disabled={isAgentWriting}
-        onClick={handleDirectGenerateTender}
-      >
-        <Sparkles className="h-3.5 w-3.5" />
-        <span>Direct Generate (Gemini Flash)</span>
-      </Button>
+      {/* Direct generate button removed */}
     </div>
   )
 
@@ -1241,31 +1141,19 @@ export function TipTapEditor({
           )}
         </Button>
         
-        {/* Add Direct Generate button */}
-        <Button 
-          onClick={handleDirectGenerateTender}
-          size="sm" 
-          variant="secondary"
-          className="mr-2"
-          disabled={isAgentWriting}
-        >
-          {isAgentWriting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4" />
-              Direct Generate
-            </>
-          )}
-        </Button>
-        
         {showProgress && (
-          <div className="ml-2 text-xs text-muted-foreground flex items-center">
-            <span className="font-medium mr-1.5">{generationStage}:</span>
-            <span className="truncate max-w-[220px]">{generationProgress}</span>
+          <div className="ml-2 text-xs text-muted-foreground flex items-center gap-2 min-w-[300px]">
+            <span className="font-medium mr-1.5 min-w-[80px]">{generationStage}:</span>
+            <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+              <span className="text-xs w-[40px]">{Math.round(progressPercentage)}%</span>
+            </div>
+            <span className="truncate max-w-[220px] text-xs text-gray-500">{generationProgress}</span>
           </div>
         )}
         

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TenderOrchestrator } from '../../../../lib/agents/tender-orchestrator';
+import { TenderOrchestrator } from '@/lib/agents/core/tender-orchestrator';
 import fs from 'fs';
 import path from 'path';
 
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     if (hasCompanyContext && !companyContextData) {
       try {
         // Import local storage dynamically to avoid server/client issues
-        const { LocalDocumentStorage } = await import('../../../../lib/local-storage');
+        const { LocalDocumentStorage } = await import('@/lib/local-storage');
         const companyDocs = await LocalDocumentStorage.getCompanyDocuments();
         
         if (companyDocs.length > 0) {
@@ -97,17 +97,22 @@ export async function POST(request: NextRequest) {
         const encoder = new TextEncoder();
 
         try {
-          // Send initial response
-          controller.enqueue(encoder.encode(`# Generating Tender Document\n\nInitializing the tender generation process...\n\n`));
+          // Send initial response - don't include the initialization message in the final document
+          controller.enqueue(encoder.encode(`<!-- PROGRESS_UPDATE: Initializing the tender generation process... -->\n`));
+          
+          // The actual content starts here - this should be rendered
+          controller.enqueue(encoder.encode(`# Tender Document\n\n`));
 
-          // Progress updates
+          // Progress updates with more granular steps
           const progressUpdates = [
-            'Analyzing source documents...',
-            'Extracting requirements...',
-            'Creating tender plan...',
-            'Generating content for each section...',
-            'Checking compliance with requirements...',
-            'Finalizing document...'
+            { message: 'Analyzing source documents...', stage: 'Analyzing' },
+            { message: 'Processing document content...', stage: 'Analyzing' },
+            { message: 'Extracting key information...', stage: 'Planning' },
+            { message: 'Creating document outline...', stage: 'Planning' },
+            { message: 'Preparing section templates...', stage: 'Planning' },
+            { message: 'Generating content...', stage: 'Writing' },
+            { message: 'Reviewing content...', stage: 'Reviewing' },
+            { message: 'Finalizing document...', stage: 'Finalizing' }
           ];
           
           // Stream progress updates as the generation progresses
@@ -115,11 +120,8 @@ export async function POST(request: NextRequest) {
           
           // Create a progress update function for the orchestrator
           const updateProgress = (message: string) => {
-            controller.enqueue(encoder.encode(`## Progress Update\n\n${message}\n\n`));
-            if (progressIndex < progressUpdates.length) {
-              controller.enqueue(encoder.encode(`${progressUpdates[progressIndex]}\n\n`));
-              progressIndex++;
-            }
+            // Use a special format for progress updates that the client can easily detect and filter
+            controller.enqueue(encoder.encode(`<!-- PROGRESS_UPDATE: ${message} -->\n`));
           };
 
           // Start the tender generation process
@@ -129,7 +131,20 @@ export async function POST(request: NextRequest) {
             companyContext: hasCompanyContext ? companyContextData : undefined,
             additionalContext: hasAdditionalContext ? additionalContext : undefined,
             maxIterations: 2,
-            onProgress: updateProgress
+            onProgress: (message: string) => {
+              // Send the progress update
+              updateProgress(message);
+              
+              // If this is a section generation message, send additional progress info
+              if (message.includes('Generating section')) {
+                const match = message.match(/Generating section (\d+)\/(\d+)/);
+                if (match) {
+                  const [_, current, total] = match;
+                  const progress = Math.round((parseInt(current) / parseInt(total)) * 100);
+                  updateProgress(`Section Progress: ${progress}%`);
+                }
+              }
+            }
           });
 
           if (!result.success || !result.tender) {
@@ -159,6 +174,9 @@ export async function POST(request: NextRequest) {
               controller.enqueue(encoder.encode(`- Agent Calls: ${JSON.stringify(result.stats.agentCalls)}\n`));
               controller.enqueue(encoder.encode(`- Iterations: ${JSON.stringify(result.stats.iterations)}\n`));
             }
+            
+            // Send completion message
+            updateProgress('Generation completed successfully');
             
             // Add footer
             controller.enqueue(encoder.encode('\n\n---\n\nTender document generated using multi-agent orchestration system.\n'));
