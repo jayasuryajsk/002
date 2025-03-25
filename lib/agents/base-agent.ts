@@ -24,9 +24,14 @@ export class BaseAgent {
         return this.generateResponseViaAPI(prompt, options);
       }
       
-      // Otherwise use direct Gemini API
+      // Use environment variables for API key
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!apiKey) {
+        throw new Error('GOOGLE_GENERATIVE_AI_API_KEY or GOOGLE_API_KEY environment variable is not set');
+      }
+      
       const { GoogleGenerativeAI } = require("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+      const genAI = new GoogleGenerativeAI(apiKey);
       
       const model = genAI.getGenerativeModel({ 
         model: this.model,

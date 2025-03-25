@@ -4,9 +4,9 @@ import { NextResponse } from "next/server"
 
 export const runtime = "edge"
 
-const apiKey = process.env.GOOGLE_API_KEY;
+const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 if (!apiKey) {
-  throw new Error('GOOGLE_API_KEY environment variable is not set');
+  throw new Error('GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set');
 }
 const genAI = new GoogleGenerativeAI(apiKey)
 

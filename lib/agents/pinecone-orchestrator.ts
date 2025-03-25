@@ -246,7 +246,11 @@ export class PineconeOrchestrator {
       
       // Generate a summary analysis focusing on compliance
       const model = (await import("@google/generative-ai")).GoogleGenerativeAI;
-      const genAI = new model(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "");
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || "";
+      if (!apiKey) {
+        console.warn("GOOGLE_GENERATIVE_AI_API_KEY is not set");
+      }
+      const genAI = new model(apiKey);
       const aiModel = genAI.getGenerativeModel({
         model: "gemini-2.0-flash-001"
       });
