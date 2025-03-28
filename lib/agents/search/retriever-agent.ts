@@ -1,9 +1,6 @@
 import { BaseAgent } from "../core/base-agent";
 import type { AgentMessage } from "../types";
-import { PineconeSearchAgent } from "./pinecone-search-agent";
-import { LocalDocumentStorage } from "@/lib/local-storage";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText } from "ai";
+import { LlamaCloudIndex, ContextChatEngine } from "llamaindex";
 
 // Import SearchResult interface from pinecone-search-agent
 interface SearchResult {
@@ -19,16 +16,29 @@ interface SearchResult {
  * This agent focuses solely on finding the most relevant documents based on queries
  */
 export class RetrieverAgent extends BaseAgent {
-  private searchAgent: PineconeSearchAgent;
+  private llamaCloudIndex: LlamaCloudIndex;
+  private chatEngine: ContextChatEngine;
   
   constructor() {
     super(
-      "retriever", 
-      "You are an expert tender document retriever. Your role is to find the most relevant documents and information for tender preparation.",
-      "gemini-2.0-flash-001",
-      "You are an expert tender document retriever. Your role is to find the most relevant documents and information for tender preparation."
+      "retriever",
+      "You are a document retrieval agent that finds relevant information from the knowledge base.",
+      "gemini-2.0-flash-001"
     );
-    this.searchAgent = new PineconeSearchAgent();
+
+    // Initialize LlamaCloud components
+    this.llamaCloudIndex = new LlamaCloudIndex({
+      name: "companydocs",
+      projectName: "Default",
+      organizationId: process.env.LLAMA_CLOUD_ORG_ID || "",
+      apiKey: process.env.LLAMA_CLOUD_API_KEY || "",
+    });
+
+    // Initialize retriever and chat engine
+    const retriever = this.llamaCloudIndex.asRetriever({
+      similarityTopK: 5,
+    });
+    this.chatEngine = new ContextChatEngine({ retriever });
   }
   
   /**
@@ -40,210 +50,70 @@ export class RetrieverAgent extends BaseAgent {
         ? JSON.parse(message.content) 
         : message.content;
       
-      // Handle different actions
-      if (data.action === "getAllDocuments") {
-        return await this.getAllDocuments();
-      } else if (data.action === "getCompanyDocuments") {
-        return await this.getCompanyDocuments();
+      const { action, query, options = {} } = data;
+      
+      switch (action) {
+        case "search":
+          return await this.handleSearch(query, options);
+        case "retrieveContext":
+          return await this.handleContextRetrieval(query, options);
+        default:
+          throw new Error(`Unsupported action: ${action}`);
       }
-        
-      const { query, limit = 5, threshold = 0.7 } = data;
-      
-      // Perform the search
-      const searchResults = await this.searchDocuments(query, limit);
-      
-      console.log(`RetrieverAgent found ${searchResults.length} relevant documents for query: "${query}"`);
-      
-      // Format the results for the next agent
-      return {
-        role: this.role,
-        content: JSON.stringify({ 
-          query, 
-          results: searchResults,
-          count: searchResults.length
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          count: searchResults.length,
-          documentIds: searchResults.map(r => r.id)
-        }
-      };
     } catch (error) {
       console.error("RetrieverAgent error:", error);
       return {
         role: this.role,
-        content: JSON.stringify({ 
-          error: `Failed to retrieve documents: ${error instanceof Error ? error.message : String(error)}`,
-          results: []
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          error: true
-        }
+        content: JSON.stringify({
+          error: error instanceof Error ? error.message : "Unknown error occurred",
+          success: false,
+          documents: []
+        })
       };
     }
   }
   
-  /**
-   * Get all documents from the vector database
-   */
-  private async getAllDocuments(): Promise<AgentMessage> {
+  private async handleSearch(query: string, options: any): Promise<AgentMessage> {
     try {
-      console.log("Attempting to get all documents");
-      const documents = await this.searchAgent.getAllDocuments();
-      
-      console.log(`RetrieverAgent retrieved ${documents.length} documents`);
-      
-      // Check if we only got fallback documents (they have predefined IDs)
-      const onlyFallbacks = documents.length > 0 && 
-        documents.every(doc => doc.id.startsWith('sample-doc-'));
-      
-      if (documents.length === 0 || onlyFallbacks) {
-        const message = onlyFallbacks ? 
-          "Only fallback documents found. Please upload actual source documents." : 
-          "No documents found in the vector database. Please upload source documents.";
-          
-        console.log(message);
-        
-        return {
-          role: this.role,
-          content: JSON.stringify({
-            documents: documents,
-            count: documents.length,
-            message: message,
-            onlyFallbacks: onlyFallbacks
-          }),
-          metadata: {
-            timestamp: new Date().toISOString(),
-            warning: true,
-            count: documents.length,
-            onlyFallbacks: onlyFallbacks
-          }
-        };
-      }
-      
+      // Use LlamaCloud's retriever for semantic search
+      const results = await this.llamaCloudIndex.asRetriever({
+        similarityTopK: options.limit || 5,
+      }).retrieve(query);
+
       return {
         role: this.role,
         content: JSON.stringify({
-          documents,
-          count: documents.length
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          count: documents.length
-        }
+          success: true,
+          documents: results,
+          query
+        })
       };
     } catch (error) {
-      console.error("Error getting all documents:", error);
-      
-      // Return a failing-gracefully message
-      return {
-        role: this.role,
-        content: JSON.stringify({
-          error: `Failed to get all documents: ${error instanceof Error ? error.message : String(error)}`,
-          documents: [],
-          count: 0
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          error: true
-        }
-      };
-    }
-  }
-  
-  /**
-   * Get all company documents from local storage
-   */
-  private async getCompanyDocuments(): Promise<AgentMessage> {
-    try {
-      console.log("Attempting to get all company documents from local storage");
-      const documents = await LocalDocumentStorage.getCompanyDocuments();
-      
-      console.log(`RetrieverAgent retrieved ${documents.length} company documents`);
-      
-      if (documents.length === 0) {
-        const message = "No company documents found in local storage. Please upload company profile documents.";
-        console.log(message);
-        
-        return {
-          role: this.role,
-          content: JSON.stringify({
-            documents: [],
-            count: 0,
-            message: message
-          }),
-          metadata: {
-            timestamp: new Date().toISOString(),
-            warning: true,
-            count: 0
-          }
-        };
-      }
-      
-      return {
-        role: this.role,
-        content: JSON.stringify({
-          documents,
-          count: documents.length
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          count: documents.length
-        }
-      };
-    } catch (error) {
-      console.error("Error getting company documents:", error);
-      
-      // Return a failing-gracefully message
-      return {
-        role: this.role,
-        content: JSON.stringify({
-          error: `Failed to get company documents: ${error instanceof Error ? error.message : String(error)}`,
-          documents: [],
-          count: 0
-        }),
-        metadata: {
-          timestamp: new Date().toISOString(),
-          error: true
-        }
-      };
-    }
-  }
-  
-  /**
-   * Specialized method to extract requirements from documents
-   */
-  async extractRequirements(documents: SearchResult[]): Promise<string[]> {
-    try {
-      return await this.searchAgent.extractRequirements(documents);
-    } catch (error) {
-      console.error("Requirements extraction error:", error);
-      return [];
+      console.error("Search error:", error);
+      throw error;
     }
   }
 
-  async searchDocuments(query: string, limit: number = 5): Promise<SearchResult[]> {
+  private async handleContextRetrieval(query: string, options: any): Promise<AgentMessage> {
     try {
-      // Load actual documents from local storage to get binary data if available
-      const { LocalDocumentStorage } = await import('@/lib/local-storage');
-      const sourceDocs = await LocalDocumentStorage.getSourceDocuments();
-      
-      console.log(`Searching across ${sourceDocs.length} documents for: ${query}`);
-      
-      // Format the results directly
-      const results = sourceDocs.slice(0, limit).map(doc => ({
-        id: doc.id,
-        content: doc.content || "Binary document",
-        score: 1.0,
-        metadata: doc.metadata || {},
-        binaryData: doc.binaryData // Include the binary data directly
-      }));
-      
-      return results;
+      // Use chat engine for more contextual retrieval
+      const response = await this.chatEngine.chat({
+        message: query,
+        stream: false
+      });
+
+      return {
+        role: this.role,
+        content: JSON.stringify({
+          success: true,
+          context: response.response,
+          sourceNodes: response.sourceNodes,
+          query
+        })
+      };
     } catch (error) {
-      console.error('Error searching documents:', error);
-      return [];
+      console.error("Context retrieval error:", error);
+      throw error;
     }
   }
 } 

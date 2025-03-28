@@ -24,10 +24,19 @@ import { v4 as uuidv4 } from 'uuid'
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
+// Add interface for extended Message type at the top of the file
+interface ExtendedMessage extends Message {
+  id?: string;
+  type?: "text" | "file" | "selected-text" | string;
+  selectedText?: string;
+  selectionInfo?: any;
+  fileDetails?: any;
+}
+
 type ChatThread = {
   id: string
   title: string
-  messages: Message[]
+  messages: ExtendedMessage[]
   currentResponse: string
   isLoading: boolean
   pdfFile: { id: string; name: string; previewUrl?: string } | null
@@ -112,6 +121,7 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
           id: chat.id,
           title: chat.title || 'New Chat',
           messages: chat.messages.map((msg: any) => ({
+            id: msg.id || Math.random().toString(36).substring(2, 9),
             role: msg.role,
             content: msg.content,
             type: msg.type || 'text',
@@ -130,6 +140,9 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
           if (onChatChange) {
             onChatChange(formattedChats[0].id)
           }
+        } else {
+          // If no chats exist, create a new one automatically
+          createNewChatThread();
         }
       } catch (error) {
         console.error('Error loading chats:', error)
@@ -138,17 +151,17 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
           description: "Failed to load chat history.",
           variant: "destructive",
         })
+        // Even on error, try to create a new chat so the user isn't stuck
+        createNewChatThread();
       } finally {
         setIsLoading(false)
       }
     }
     loadChats()
-  }, [])
+  }, [onChatChange])
 
-  const createNewThread = useCallback(async () => {
-    if (isLoading) return null; // Prevent multiple simultaneous creations
-    
-    setIsLoading(true);
+  // Helper function to create a new chat thread
+  const createNewChatThread = useCallback(async () => {
     try {
       const response = await fetch('/api/chats', {
         method: 'POST',
@@ -163,7 +176,6 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
       
       const savedChat = await response.json();
       
-      // Only create the thread in state after successful API call
       const newThread: ChatThread = {
         id: savedChat.id,
         title: 'New Chat',
@@ -180,20 +192,25 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
       if (onChatChange) {
         onChatChange(newThread.id);
       }
-
-      return newThread.id;
     } catch (error) {
-      console.error('Error creating chat:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create new chat. Please try again.",
-        variant: "destructive",
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
+      console.error('Error creating initial chat:', error);
+      // Create a fallback local-only chat as a last resort
+      const fallbackId = Math.random().toString(36).substring(2, 15);
+      const fallbackThread: ChatThread = {
+        id: fallbackId,
+        title: 'New Chat',
+        messages: [],
+        currentResponse: '',
+        isLoading: false,
+        pdfFile: null
+      };
+      setThreads([fallbackThread]);
+      setActiveThreadId(fallbackId);
+      if (onChatChange) {
+        onChatChange(fallbackId);
+      }
     }
-  }, [isLoading, onChatChange, toast]);
+  }, [onChatChange]);
 
   const updateThread = useCallback((threadId: string, updates: Partial<ChatThread>) => {
     setThreads(prev => prev.map(thread => 
@@ -218,7 +235,7 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
           setActiveThreadId(newThreads[0].id);
         } else if (newThreads.length === 0) {
           // If no threads left, create a new one
-          createNewThread();
+          createNewChatThread();
         }
         return newThreads;
       });
@@ -230,7 +247,7 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
         variant: "destructive",
       });
     }
-  }, [activeThreadId, createNewThread, toast]);
+  }, [activeThreadId, createNewChatThread, toast]);
 
   const deleteAllChats = useCallback(async () => {
     if (!threads.length) return;
@@ -240,7 +257,7 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
       if (!response.ok) throw new Error('Failed to delete all chats');
       
       setThreads([]);
-      createNewThread();
+      createNewChatThread();
       
       toast({
         title: "All chats deleted",
@@ -254,7 +271,14 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
         variant: "destructive"
       });
     }
-  }, [threads.length, createNewThread, toast]);
+  }, [threads.length, createNewChatThread, toast]);
+
+  // Create a new chat if none exists after initial load
+  useEffect(() => {
+    if (!isLoading && threads.length === 0) {
+      createNewChatThread();
+    }
+  }, [isLoading, threads.length, createNewChatThread]);
 
   return {
     threads,
@@ -262,7 +286,7 @@ const useChatThreads = (onChatChange?: (chatId: string | null) => void) => {
     activeThreadId,
     isLoading,
     setActiveThreadId,
-    createNewThread,
+    createNewChatThread,
     updateThread,
     deleteThread,
     deleteAllChats
@@ -278,10 +302,10 @@ const MessageItem = ({
   messageIndex,
   messages
 }: { 
-  message: Message, 
+  message: ExtendedMessage, 
   onApplyEdit?: (text: string) => void,
   messageIndex: number,
-  messages: Message[]
+  messages: ExtendedMessage[]
 }) => {
   if (message.role === "user") {
     if (message.type === "file") {
@@ -610,7 +634,7 @@ const useChatOperations = (
       return;
     }
 
-    const newMessages: Message[] = [];
+    const newMessages: ExtendedMessage[] = [];
 
     // If there's input, add it as a message bubble
     if (text.trim()) {
@@ -668,7 +692,7 @@ const useChatOperations = (
       }, thread.pdfFile?.id);
 
       // After streaming is complete, save the assistant's message
-      const assistantMessage: Message = { 
+      const assistantMessage: ExtendedMessage = { 
         role: "assistant", 
         content: fullResponse,
         type: "text"
@@ -709,7 +733,7 @@ const useChatOperations = (
   const handleSearch = useCallback(async (value: string) => {
     if (!activeThread || activeThread.isLoading) return;
     
-    const userMessage: Message = { role: "user", content: `Search: ${value}`, type: "text" };
+    const userMessage: ExtendedMessage = { role: "user", content: `Search: ${value}`, type: "text" };
     
     // Update UI optimistically
     const updatedMessages = [...activeThread.messages, userMessage];
@@ -739,7 +763,7 @@ const useChatOperations = (
       });
       
       // After search is complete, save the assistant's message
-      const assistantMessage: Message = { 
+      const assistantMessage: ExtendedMessage = { 
         role: "assistant", 
         content: fullResponse,
         type: "text"
@@ -848,7 +872,7 @@ export function AIAssistant({
     activeThreadId, 
     isLoading, 
     setActiveThreadId, 
-    createNewThread, 
+    createNewChatThread, 
     updateThread, 
     deleteThread, 
     deleteAllChats 
@@ -932,7 +956,7 @@ export function AIAssistant({
               variant="ghost" 
               size="icon" 
               className="h-7 w-7 text-gray-500 hover:bg-gray-100"
-              onClick={createNewThread}
+              onClick={createNewChatThread}
               aria-label="New chat"
             >
               <Plus className="h-4 w-4" />
@@ -981,7 +1005,7 @@ export function AIAssistant({
                   toast({
                     title: "Edit applied",
                     description: "The document has been updated with the AI's changes.",
-                    variant: "success"
+                    variant: "default"
                   });
                 } else {
                   console.log("No onApplyEdit handler available:", text, editSelectionInfo);
@@ -1031,7 +1055,7 @@ export function AIAssistant({
                   const endLine = selectionInfo?.endLine || 15;
                   
                   // Create a message that includes the selected text
-                  const newMessages: Message[] = [
+                  const newMessages: ExtendedMessage[] = [
                     { 
                       role: "user", 
                       content: value, 
@@ -1072,7 +1096,7 @@ export function AIAssistant({
                     });
                     
                     // Save the assistant's response
-                    const assistantMessage: Message = { 
+                    const assistantMessage: ExtendedMessage = { 
                       role: "assistant", 
                       content: fullResponse,
                       type: "text"

@@ -31,7 +31,11 @@ export interface TenderSection {
   title: string
   content: string
   requirements: string[]
-  status?: "draft" | "review" | "approved"
+  compliance?: {
+    passed: boolean
+    issues?: string[]
+    suggestions?: string[]
+  }
 }
 
 export interface TenderDocument {

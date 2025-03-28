@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Plus, Trash2, Loader2, File } from 'lucide-react';
 import { PreviewAttachment } from './ui/PreviewAttachment';
 import { Button } from './ui/button';
-import { TenderWriterAgent } from '@/lib/agents/tender-writer';
+import { TenderWriterAgent } from '@/lib/agents/generation/tender-writer';
 import { SourceDocument } from '@/lib/agents/types';
 import { useToast } from './ui/use-toast';
 

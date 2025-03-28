@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { VectorSearchAgent } from "../../../../lib/agents/vector-search-agent";
+import { VectorSearchAgent } from "@/lib/agents/search/vector-search-agent";
 
 export async function POST(req: Request) {
   try {

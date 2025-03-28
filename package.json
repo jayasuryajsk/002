@@ -59,6 +59,7 @@
     "framer-motion": "^12.4.2",
     "fs": "^0.0.1-security",
     "langchain": "^0.1.37",
+    "llamaindex": "^0.9.13",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.9.0",
     "marked": "^15.0.7",

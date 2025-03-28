@@ -3,7 +3,7 @@ import { PreviewAttachment } from './ui/PreviewAttachment'
 import { Button } from './ui/button'
 import { Upload, Plus, Trash2, FileIcon, Loader2 } from 'lucide-react'
 import { SourceDocument } from '@/lib/agents/types'
-import { TenderWriterAgent } from '@/lib/agents/tender-writer'
+import { TenderWriterAgent } from '@/lib/agents/generation/tender-writer'
 import { useToast } from './ui/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import {

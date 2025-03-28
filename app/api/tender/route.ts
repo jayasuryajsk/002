@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
-import { TenderOrchestrator } from "@/lib/agents/orchestrator"
+import { LlamaCloudOrchestrator } from "@/lib/agents/core/llama-cloud-orchestrator"
 import type { TenderDocument } from "@/lib/agents/types"
 
 export async function POST(req: Request) {
   try {
     const tender: TenderDocument = await req.json()
-    const orchestrator = new TenderOrchestrator(tender)
-    const completedTender = await orchestrator.generateCompleteTender()
+    const orchestrator = new LlamaCloudOrchestrator()
+    const completedTender = await orchestrator.start(tender)
 
     return NextResponse.json(completedTender)
   } catch (error) {

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { generateText } from "ai"
 import { marked } from 'marked'
-
-// Initialize Google AI with API key
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "")
 
 // Helper function to convert HTML to markdown
 function htmlToMarkdown(html: string): string {
@@ -36,16 +34,16 @@ export async function POST(request: NextRequest) {
       ? htmlToMarkdown(content) 
       : content
     
-    // Use Gemini Flash model for optimal performance
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash-001",
-      generationConfig: {
-        temperature: 0.4,
-        topK: 20,
-        topP: 0.95,
-        maxOutputTokens: 4096,
-      }
-    })
+    // Get API key
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY || "";
+    if (!apiKey) {
+      return NextResponse.json({ error: 'API key not set' }, { status: 500 })
+    }
+    
+    // Create Google AI provider
+    const googleAI = createGoogleGenerativeAI({
+      apiKey: apiKey
+    });
     
     // Create a prompt for improving the section
     const prompt = `
@@ -69,15 +67,21 @@ export async function POST(request: NextRequest) {
     Your output will be rendered directly in the tender document, so use proper markdown formatting.
     `
     
-    // Generate the improved section content
-    const result = await model.generateContent(prompt)
-    const improvedContent = result.response.text()
+    // Generate content using the AI SDK
+    const result = await generateText({
+      model: googleAI("gemini-2.0-flash-001"),
+      prompt: prompt,
+      temperature: 0.4,
+      maxTokens: 4096,
+    });
+    
+    const improvedContent = result.text
     
     // Convert improved markdown to HTML
-    const html = marked.parse(improvedContent)
+    const htmlContent = marked.parse(improvedContent) as string
     
     // Return the HTML response
-    return new Response(html)
+    return new Response(htmlContent)
     
   } catch (error: any) {
     console.error('Error improving section:', error)

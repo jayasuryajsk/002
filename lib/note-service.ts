@@ -1,5 +1,5 @@
 import type { Message } from ".prisma/client"
-import { NoteTakingAgent } from "./agents/note-taking-agent"
+import { NoteTakingAgent } from "@/lib/agents/generation/note-taking-agent"
 import { prisma } from "./prisma"
 import { v4 as uuidv4 } from "uuid"
 import { emitEvent } from "./events"

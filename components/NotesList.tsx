@@ -1,6 +1,6 @@
 import { FileText, Lightbulb, Tag, Sparkles, Filter, ArrowUp, ArrowDown } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Note } from "@/lib/agents/note-taking-agent"
+import { Note } from "@/lib/agents/generation/note-taking-agent"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "./ui/scroll-area"
 import { Button } from "./ui/button"

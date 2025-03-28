@@ -9,12 +9,10 @@ services:
     volumes:
       - ./local-storage:/app/local-storage
     environment:
-      - NODE_ENV=development
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
-      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME}
-      - VECTOR_DB=pinecone
+      - DATABASE_URL=${DATABASE_URL}
+      - BLOB_READ_WRITE_TOKEN=${BLOB_READ_WRITE_TOKEN}
+      - LLAMA_CLOUD_API_KEY=${LLAMA_CLOUD_API_KEY}
+      - LLAMA_CLOUD_ORG_ID=${LLAMA_CLOUD_ORG_ID}
 
   # Development tools
   adminer:

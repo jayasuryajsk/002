@@ -22,7 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { TipTapEditor } from "@/components/TipTapEditor"
 import { Sources } from "@/components/Sources"
 import { InternalDocs } from "@/components/InternalDocs"
-import { TenderWriterAgent } from "@/lib/agents/tender-writer"
+import { TenderWriterAgent } from "@/lib/agents/generation/tender-writer"
 import { Editor } from '@tiptap/react'
 
 export default function TenderWriterApp() {

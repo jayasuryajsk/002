@@ -158,6 +158,9 @@ importers:
       langchain:
         specifier: ^0.1.37
         version: 0.1.37(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/credential-provider-node@3.772.0)(@azure/search-documents@12.1.0)(@datastax/astra-db-ts@1.5.0)(@huggingface/inference@2.8.1)(@notionhq/client@2.3.0)(@pinecone-database/pinecone@5.1.1)(@qdrant/js-client-rest@1.13.0(typescript@5.7.3))(@smithy/util-utf8@2.3.0)(@supabase/postgrest-js@1.19.2)(@supabase/supabase-js@2.49.1)(@upstash/redis@1.34.6)(@upstash/vector@1.2.1)(@zilliz/milvus2-sdk-node@2.5.6)(assemblyai@4.9.0)(axios@1.8.4)(chromadb@1.10.3(@google/generative-ai@0.21.0)(cohere-ai@7.16.0)(openai@4.89.0(ws@8.18.1)(zod@3.24.2)))(cohere-ai@7.16.0)(fast-xml-parser@4.4.1)(html-to-text@9.0.5)(ignore@5.3.2)(jsonwebtoken@9.0.2)(lodash@4.17.21)(mammoth@1.9.0)(mongodb@6.15.0(@aws-sdk/credential-providers@3.772.0))(openai@4.89.0(ws@8.18.1)(zod@3.24.2))(pdf-parse@1.1.1)(pg@8.14.1)(portkey-ai@0.1.16)(ws@8.18.1)
+      llamaindex:
+        specifier: ^0.9.13
+        version: 0.9.13(@huggingface/transformers@3.4.0)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(ws@8.18.1)(zod@3.24.2)
       lucide-react:
         specifier: ^0.475.0
         version: 0.475.0(react@18.3.1)
@@ -1402,11 +1405,20 @@ packages:
       '@llamaindex/core': 0.4.23
       '@llamaindex/env': 0.1.27
 
+  '@llamaindex/cloud@4.0.0':
+    resolution: {integrity: sha512-wnVZx+oQFf9GxbbpKaBkPPnbDGQ+Y6VBa62Rfwrhljx69va2962j7NUOly0BkfaqqW3wm/hDiSUObbMsdeZwoA==}
+    peerDependencies:
+      '@llamaindex/core': 0.6.0
+      '@llamaindex/env': 0.1.29
+
   '@llamaindex/cohere@0.0.4':
     resolution: {integrity: sha512-SA0i0awQmqEpSHH/BQtRedqvkmyWsiYRGc4y6ECfYbt/q5ng0NDxdFjLwdaUwKjpXagWMM2/qHRr/TDhYVM7ow==}
 
   '@llamaindex/core@0.4.23':
     resolution: {integrity: sha512-Z/JRjLoS+VbqyUdbIsdas5tYPfNdgCy1xxvMWWF0k7lgwoA2shEwv1ejtDDbxM/Ckha4anKJ+3nSn3z1+lb9sA==}
+
+  '@llamaindex/core@0.6.0':
+    resolution: {integrity: sha512-d4YWmWkzSm+BJQPphCAMMV+LxafeiJKd9Q8qN/ML5bRoh4cw/G4WB/CtyKjnHJ99OZuVyeDRGrKQUAlecBwUtA==}
 
   '@llamaindex/deepinfra@0.0.35':
     resolution: {integrity: sha512-Wc3h0nshnqn8WqeAumWILDHvE+0yfYTcpbCcO/MCitMJKTQCErujWAG1M9MKDIZQC4UR5zItGUYPiAW6SD9s2w==}
@@ -1474,11 +1486,22 @@ packages:
       tree-sitter: ^0.22.0
       web-tree-sitter: ^0.24.3
 
+  '@llamaindex/node-parser@2.0.0':
+    resolution: {integrity: sha512-MJ3sizjkVqpC+vijwl3FVGxdwaJhHgqyqbvWOJR4bqaoW5kJZGoX/yFPTwkMfHiPjdPW8r3x1U1p6ZWTotNcRw==}
+    peerDependencies:
+      '@llamaindex/core': 0.6.0
+      '@llamaindex/env': 0.1.29
+      tree-sitter: ^0.22.0
+      web-tree-sitter: ^0.24.3
+
   '@llamaindex/ollama@0.0.39':
     resolution: {integrity: sha512-mAAI89Wi46Op+a8e4bpei0TydsaUR2s0dd2dNqXMTkAQmZHpB6uvy5lhKGY6PEQCtDSZ3aV46vZFHXiTMlV+Qg==}
 
   '@llamaindex/openai@0.1.51':
     resolution: {integrity: sha512-lKDmiglvAMRQ8hYxT54RgtBSDxsVT7IOz7GGMtMc0ppuFdVzGUAII2yrfOUlmdYfDzHLpZr6QwL8Ygs6BLrbHg==}
+
+  '@llamaindex/openai@0.2.0':
+    resolution: {integrity: sha512-QW8wFIZ+kmpIfk6/VhradEAEXFkeStgzMJvXoFAUvNJVIqpDpiPHr7OK5pWKqKyo9DOXXXr09ezGuD76q/SUlg==}
 
   '@llamaindex/pinecone@0.0.4':
     resolution: {integrity: sha512-y7L+v+Fz6uoYBsfgkEpV+gWJmAJ2beYyh9b4XMF/d+Urc6VwPDV7zMKPz2pRNjc2ymNAJVdbQLvGDzyVVjt5cw==}
@@ -1517,6 +1540,13 @@ packages:
 
   '@llamaindex/weaviate@0.0.4':
     resolution: {integrity: sha512-qvhf/sXoSZNG5/+4OJJZQJHEr57XV9oRn6iKDIaMAi58TepYyLhxzCd2uvRAL2dJFbouUe4IKfgKNPdLMDSekw==}
+
+  '@llamaindex/workflow@1.0.0':
+    resolution: {integrity: sha512-ObIS955N8N7wusw9dHgPgGUOJMIzqCMl3UgssDQcqR3roH7QdDF3kU5cBsjisUuair2GrbS7Gbb/rEC1h3RMkw==}
+    peerDependencies:
+      '@llamaindex/core': 0.6.0
+      '@llamaindex/env': 0.1.29
+      zod: ^3.23.8
 
   '@mapbox/node-pre-gyp@1.0.11':
     resolution: {integrity: sha512-Yhlar6v9WQgUp/He7BdgzOz8lqMQ8sU+jkCq7Wx8Myc5YFJLbEe7lgui/V7G1qB1DJykHSGwreceSaD60Y0PUQ==}
@@ -5741,6 +5771,10 @@ packages:
     resolution: {integrity: sha512-2q7rbfGH478+qFGN/45ZyJymWhPBhVxCC1nJgBlcwSFMkZKwsOJ2BRuxKv3EK+w157Mg1rJu0ub1LW86slo3lg==}
     engines: {node: '>=18.0.0'}
 
+  llamaindex@0.9.13:
+    resolution: {integrity: sha512-mlNLiFDG6+kFRT4igXcRlVfF9flrHxAdcx1kWgSZX/SFbyqtBT6aYg60wXsHmt/QkPTqj4lO2WrRLdZFmLvTRg==}
+    engines: {node: '>=18.0.0'}
+
   loader-runner@4.3.0:
     resolution: {integrity: sha512-3R/1M+yS3j5ou80Me59j7F9IMs4PXs3VqRrm0TU3AbKPxlmpoY1TNscJV/oGJXo8qCatFGTfDbY6W6ipGOYXfg==}
     engines: {node: '>=6.11.5'}
@@ -9380,6 +9414,11 @@ snapshots:
       '@llamaindex/core': 0.4.23(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)
       '@llamaindex/env': 0.1.27(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)
 
+  '@llamaindex/cloud@4.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))':
+    dependencies:
+      '@llamaindex/core': 0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+
   '@llamaindex/cohere@0.0.4(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)':
     dependencies:
       '@llamaindex/core': 0.4.23(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)
@@ -9409,6 +9448,17 @@ snapshots:
       - js-tiktoken
       - pathe
       - tiktoken
+
+  '@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)':
+    dependencies:
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@types/node': 22.13.11
+      magic-bytes.js: 1.10.0
+      zod: 3.24.2
+      zod-to-json-schema: 3.24.1(zod@3.24.2)
+    transitivePeerDependencies:
+      - '@huggingface/transformers'
+      - gpt-tokenizer
 
   '@llamaindex/deepinfra@0.0.35(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)(ws@8.18.1)(zod@3.24.2)':
     dependencies:
@@ -9563,6 +9613,14 @@ snapshots:
       tree-sitter: 0.22.4
       web-tree-sitter: 0.24.7
 
+  '@llamaindex/node-parser@2.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)':
+    dependencies:
+      '@llamaindex/core': 0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      html-to-text: 9.0.5
+      tree-sitter: 0.22.4
+      web-tree-sitter: 0.24.7
+
   '@llamaindex/ollama@0.0.39(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)':
     dependencies:
       '@llamaindex/core': 0.4.23(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)
@@ -9592,6 +9650,18 @@ snapshots:
       - tiktoken
       - ws
       - zod
+
+  '@llamaindex/openai@0.2.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(ws@8.18.1)':
+    dependencies:
+      '@llamaindex/core': 0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      openai: 4.89.0(ws@8.18.1)(zod@3.24.2)
+      zod: 3.24.2
+    transitivePeerDependencies:
+      - '@huggingface/transformers'
+      - encoding
+      - gpt-tokenizer
+      - ws
 
   '@llamaindex/pinecone@0.0.4(@aws-crypto/sha256-js@5.2.0)(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(js-tiktoken@1.0.19)(pathe@2.0.3)':
     dependencies:
@@ -9732,6 +9802,12 @@ snapshots:
       - js-tiktoken
       - pathe
       - tiktoken
+
+  '@llamaindex/workflow@1.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(zod@3.24.2)':
+    dependencies:
+      '@llamaindex/core': 0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      zod: 3.24.2
 
   '@mapbox/node-pre-gyp@1.0.11':
     dependencies:
@@ -14857,6 +14933,28 @@ snapshots:
       - typescript
       - utf-8-validate
       - voyageai
+      - web-tree-sitter
+      - ws
+      - zod
+
+  llamaindex@0.9.13(@huggingface/transformers@3.4.0)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(ws@8.18.1)(zod@3.24.2):
+    dependencies:
+      '@llamaindex/cloud': 4.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))
+      '@llamaindex/core': 0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/env': 0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)
+      '@llamaindex/node-parser': 2.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)
+      '@llamaindex/openai': 0.2.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0)(ws@8.18.1)
+      '@llamaindex/workflow': 1.0.0(@llamaindex/core@0.6.0(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(@llamaindex/env@0.1.29(@huggingface/transformers@3.4.0)(gpt-tokenizer@2.9.0))(zod@3.24.2)
+      '@types/lodash': 4.17.16
+      '@types/node': 22.13.11
+      ajv: 8.17.1
+      gpt-tokenizer: 2.9.0
+      lodash: 4.17.21
+      magic-bytes.js: 1.10.0
+    transitivePeerDependencies:
+      - '@huggingface/transformers'
+      - encoding
+      - tree-sitter
       - web-tree-sitter
       - ws
       - zod
