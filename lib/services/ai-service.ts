@@ -4,7 +4,7 @@ import { AgentRole, getModelConfigForAgent, ModelConfig } from "../config/ai-mod
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 
 // Environment variable validation
-if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+if (!process.env.NEXT_PUBLIC_GOOGLE_GENERATIVE_AI_API_KEY) {
   throw new Error('GOOGLE_GENERATIVE_AI_API_KEY is not defined');
 }
 
@@ -22,7 +22,7 @@ class AIService {
   private genAI: GoogleGenerativeAI;
 
   private constructor() {
-    this.apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY!;
+    this.apiKey = process.env.NEXT_PUBLIC_GOOGLE_GENERATIVE_AI_API_KEY!;
     this.genAI = new GoogleGenerativeAI(this.apiKey);
     this.embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: this.apiKey,
